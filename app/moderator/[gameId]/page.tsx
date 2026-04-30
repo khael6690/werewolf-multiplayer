@@ -1,0 +1,1047 @@
+"use client";
+import { useEffect, useState, useCallback, use } from "react";
+import { createClient } from "../../../lib/supabase/client";
+import type { Game, Card, Player } from "../../../lib/types";
+import { ROLE_INFO } from "../../../lib/types";
+
+const NIGHT_STEPS = [
+  "werewolf",
+  "dokter",
+  "peramal",
+  "hunter_revenge",
+] as const;
+
+// ── Shared helpers ────────────────────────────────────────────
+const S = {
+  panel: {
+    background: "#161b22",
+    border: "1px solid #30363d",
+    borderRadius: 12,
+    padding: 20,
+    maxWidth: 700,
+    margin: "0 auto 16px",
+  } as React.CSSProperties,
+  btn: (color: string): React.CSSProperties => ({
+    padding: "10px 0",
+    width: "100%",
+    background: color,
+    color: "#fff",
+    border: "none",
+    borderRadius: 8,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: "0.95rem",
+  }),
+  narasi: (accent = "#58a6ff"): React.CSSProperties => ({
+    background: "#1c2330",
+    borderLeft: `3px solid ${accent}`,
+    borderRadius: "0 8px 8px 0",
+    padding: "12px 14px",
+    fontSize: "0.88rem",
+    color: "#c9d1d9",
+    lineHeight: 1.6,
+    marginBottom: 16,
+  }),
+  sectionTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    fontSize: "0.9rem",
+    fontWeight: 700,
+    color: "#8b949e",
+    textTransform: "uppercase" as const,
+    letterSpacing: 1,
+    borderBottom: "1px solid #30363d",
+    paddingBottom: 10,
+    marginBottom: 14,
+  },
+};
+
+// ── Status Bar ────────────────────────────────────────────────
+function StatusBar({ players }: { players: Player[] }) {
+  const alive = players.filter((p) => p.status === "alive").length;
+  const wolves = players.filter(
+    (p) => p.status === "alive" && p.role === "Werewolf"
+  ).length;
+  const dead = players.filter((p) => p.status === "dead").length;
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <span
+        style={{
+          flex: 1,
+          padding: "5px 10px",
+          background: "rgba(63,185,80,0.15)",
+          border: "1px solid #3fb950",
+          borderRadius: 20,
+          color: "#3fb950",
+          fontSize: "0.78rem",
+          fontWeight: 700,
+          textAlign: "center",
+        }}
+      >
+        ✅ {alive} Hidup
+      </span>
+      <span
+        style={{
+          flex: 1,
+          padding: "5px 10px",
+          background: "rgba(220,50,50,0.15)",
+          border: "1px solid #dc2626",
+          borderRadius: 20,
+          color: "#f87171",
+          fontSize: "0.78rem",
+          fontWeight: 700,
+          textAlign: "center",
+        }}
+      >
+        🐺 {wolves} WW
+      </span>
+      <span
+        style={{
+          flex: 1,
+          padding: "5px 10px",
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid #30363d",
+          borderRadius: 20,
+          color: "#8b949e",
+          fontSize: "0.78rem",
+          fontWeight: 700,
+          textAlign: "center",
+        }}
+      >
+        💀 {dead} Mati
+      </span>
+    </div>
+  );
+}
+
+// ── Player Grid ───────────────────────────────────────────────
+function PlayerGrid({
+  players,
+  selectedId,
+  onSelect,
+  showRoles = false,
+}: {
+  players: Player[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  showRoles?: boolean;
+}) {
+  return (
+    <div
+      style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}
+    >
+      {players.map((p) => {
+        const info = ROLE_INFO[p.role];
+        const isDead = p.status === "dead";
+        const isSel = selectedId === p.id;
+        return (
+          <button
+            key={p.id}
+            onClick={() => !isDead && onSelect(p.id)}
+            disabled={isDead}
+            style={{
+              background: isDead ? "#1a0505" : isSel ? "#2a2000" : "#1c2330",
+              border: `2px solid ${
+                isDead ? "#3d1515" : isSel ? "#f0c040" : "#30363d"
+              }`,
+              borderRadius: 10,
+              padding: "10px 6px",
+              textAlign: "center",
+              cursor: isDead ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+              boxShadow: isSel ? "0 0 12px rgba(240,192,64,0.25)" : "none",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "0.88rem",
+                color: isDead ? "#6b3333" : "#e6edf3",
+                textDecoration: isDead ? "line-through" : "none",
+              }}
+            >
+              {p.name}
+            </div>
+            {showRoles && (
+              <div
+                style={{
+                  fontSize: "0.65rem",
+                  marginTop: 3,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  background: "rgba(255,255,255,0.08)",
+                  color: info.color,
+                }}
+              >
+                {info.emoji} {p.role}
+              </div>
+            )}
+            {isSel && (
+              <div
+                style={{ fontSize: "0.65rem", color: "#f0c040", marginTop: 3 }}
+              >
+                ✦ Dipilih
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Setup Panel ───────────────────────────────────────────────
+function SetupPanel({
+  onGameCreated,
+}: {
+  onGameCreated: (gameId: string, code: string) => void;
+}) {
+  const [total, setTotal] = useState(12);
+  const [roles, setRoles] = useState({
+    Warga: 8,
+    Werewolf: 2,
+    Peramal: 1,
+    Dokter: 1,
+    Hunter: 0,
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleCreate() {
+    setLoading(true);
+    setError("");
+    const res = await fetch("/api/game/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ total, roles }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error);
+      setLoading(false);
+      return;
+    }
+    onGameCreated(data.gameId, data.code);
+  }
+
+  const roleList = [
+    { key: "Warga", label: "Warga", emoji: "👤" },
+    { key: "Werewolf", label: "Werewolf", emoji: "🐺" },
+    { key: "Peramal", label: "Peramal", emoji: "🔮" },
+    { key: "Dokter", label: "Dokter", emoji: "💉" },
+    { key: "Hunter", label: "Hunter", emoji: "🏹" },
+  ] as const;
+
+  return (
+    <div style={S.panel}>
+      <div style={S.sectionTitle}>
+        <span>⚙️</span> Setup Permainan
+      </div>
+      <label
+        style={{
+          color: "#8b949e",
+          fontSize: "0.78rem",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
+        Total Pemain
+      </label>
+      <input
+        type="number"
+        value={total}
+        min={4}
+        max={30}
+        onChange={(e) => setTotal(+e.target.value)}
+        style={{
+          display: "block",
+          width: "100%",
+          margin: "6px 0 16px",
+          padding: "8px 12px",
+          background: "#0d1117",
+          color: "#e6edf3",
+          border: "1px solid #30363d",
+          borderRadius: 8,
+          fontSize: "1rem",
+        }}
+      />
+
+      <div style={S.sectionTitle}>
+        <span>🃏</span> Jumlah Peran
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(5, 1fr)",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
+        {roleList.map((r) => (
+          <div
+            key={r.key}
+            style={{
+              background: "#1c2330",
+              border: "1px solid #30363d",
+              borderRadius: 10,
+              padding: "10px 8px",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "1.8rem" }}>{r.emoji}</div>
+            <div
+              style={{
+                fontSize: "0.65rem",
+                color: "#8b949e",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                margin: "4px 0",
+              }}
+            >
+              {r.label}
+            </div>
+            <input
+              type="number"
+              value={roles[r.key]}
+              min={0}
+              onChange={(e) =>
+                setRoles((prev) => ({ ...prev, [r.key]: +e.target.value }))
+              }
+              style={{
+                width: "100%",
+                padding: "4px 6px",
+                background: "#0d1117",
+                color: "#e6edf3",
+                border: "1px solid #30363d",
+                borderRadius: 6,
+                textAlign: "center",
+                fontSize: "1rem",
+                fontWeight: 700,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      {error && (
+        <p style={{ color: "#f87171", fontSize: "0.82rem", marginBottom: 10 }}>
+          {error}
+        </p>
+      )}
+      <button
+        onClick={handleCreate}
+        disabled={loading}
+        style={S.btn("linear-gradient(135deg,#1f6feb,#388bfd)")}
+      >
+        {loading ? "Membuat..." : "🎲 Generate & Acak Kartu"}
+      </button>
+    </div>
+  );
+}
+
+// ── Night Phase Panel ─────────────────────────────────────────
+function NightPanel({
+  game,
+  players,
+  gameId,
+  onRefresh,
+}: {
+  game: Game;
+  players: Player[];
+  gameId: string;
+  onRefresh: () => void;
+}) {
+  const [selId, setSelId] = useState<string | null>(null);
+  const [seerResult, setSeerResult] = useState<{
+    name: string;
+    isWW: boolean;
+  } | null>(null);
+  const alivePlayers = players.filter((p) => p.status === "alive");
+
+  const step = game.night_step;
+
+  async function callAction(action: string, extra = {}) {
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, gameId, payload: extra }),
+    });
+    onRefresh();
+  }
+
+  function checkSeer(id: string) {
+    const p = players.find((x) => x.id === id)!;
+    setSeerResult({ name: p.name, isWW: p.role === "Werewolf" });
+  }
+
+  const STEP_CONFIG = {
+    werewolf: {
+      title: "🐺 Giliran Werewolf",
+      accent: "#e05252",
+      narasi:
+        '"Semua warga, pejamkan mata... Werewolf, buka mata kalian." Persilakan Werewolf memilih korban malam ini.',
+      btnLabel: "Selesai, Lanjut ke Dokter ➔",
+      nextAction: () => {
+        callAction("night_step", {
+          step: "dokter",
+          actions: { ...game.night_actions, killId: selId },
+        });
+        setSelId(null);
+      },
+      filter: (p: Player) => p.role !== "Werewolf",
+    },
+    dokter: {
+      title: "💉 Giliran Dokter",
+      accent: "#58a6ff",
+      narasi:
+        '"Werewolf, tutup mata. Dokter, buka mata." Dokter menunjuk siapa yang ingin diselamatkan malam ini.',
+      btnLabel: "Selesai, Lanjut ke Peramal ➔",
+      nextAction: () => {
+        callAction("night_step", {
+          step: "peramal",
+          actions: { ...game.night_actions, healId: selId },
+        });
+        setSelId(null);
+        setSeerResult(null);
+      },
+      filter: () => true,
+    },
+    peramal: {
+      title: "🔮 Giliran Peramal",
+      accent: "#bc8cff",
+      narasi:
+        '"Dokter, tutup mata. Peramal, buka mata." Peramal menunjuk satu pemain. Hasil hanya terlihat moderator.',
+      btnLabel: "Semua Tidur, Proses Malam ➔",
+      nextAction: () => {
+        callAction("process_night", {
+          killId: game.night_actions.killId,
+          healId: game.night_actions.healId,
+        });
+      },
+      filter: () => true,
+    },
+    hunter_revenge: {
+      title: "🏹 Pembalasan Hunter",
+      accent: "#fcd34d",
+      narasi:
+        'Hunter terbunuh! Bisikkan ke Hunter: "Kamu bisa membawa satu orang bersamamu." Hunter menunjuk targetnya.',
+      btnLabel: "🏹 Eksekusi Peluru Hunter ➔",
+      nextAction: () => {
+        callAction("hunter_revenge", { hunterKillId: selId });
+        setSelId(null);
+      },
+      filter: () => true,
+    },
+  } as const;
+
+  if (!step || !(step in STEP_CONFIG)) return null;
+  const cfg = STEP_CONFIG[step as keyof typeof STEP_CONFIG];
+
+  return (
+    <div
+      style={{
+        ...S.panel,
+        background: "linear-gradient(135deg,#080d18,#0d1117)",
+        border: "1px solid #1a2744",
+      }}
+    >
+      <div
+        style={{
+          padding: "8px 16px",
+          borderRadius: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(88,130,255,0.15)",
+          border: "1px solid #1e3a5f",
+          color: "#58a6ff",
+          fontWeight: 800,
+          marginBottom: 10,
+        }}
+      >
+        🌙 Malam Ke-{game.night_round}
+      </div>
+      <h3
+        style={{
+          fontWeight: 800,
+          fontSize: "1.1rem",
+          margin: "0 0 12px",
+          color: cfg.accent,
+        }}
+      >
+        {cfg.title}
+      </h3>
+      <div style={S.narasi(cfg.accent)}>
+        📢 <strong>Moderator:</strong> {cfg.narasi}
+      </div>
+
+      {seerResult && (
+        <div
+          style={{
+            borderRadius: 10,
+            padding: 14,
+            textAlign: "center",
+            fontWeight: 700,
+            marginBottom: 16,
+            background: seerResult.isWW
+              ? "rgba(220,50,50,0.2)"
+              : "rgba(63,185,80,0.15)",
+            border: `1px solid ${seerResult.isWW ? "#dc2626" : "#3fb950"}`,
+            color: seerResult.isWW ? "#fca5a5" : "#86efac",
+          }}
+        >
+          {seerResult.isWW
+            ? `🐺 YA, WEREWOLF! — ${seerResult.name}`
+            : `✅ BUKAN WEREWOLF — ${seerResult.name}`}
+        </div>
+      )}
+
+      <PlayerGrid
+        players={
+          step === "werewolf" ? alivePlayers.filter(cfg.filter) : alivePlayers
+        }
+        selectedId={selId}
+        onSelect={step === "peramal" ? checkSeer : setSelId}
+        showRoles
+      />
+      <button
+        onClick={cfg.nextAction}
+        style={{
+          ...S.btn("linear-gradient(135deg,#1f6feb,#388bfd)"),
+          marginTop: 16,
+        }}
+      >
+        {cfg.btnLabel}
+      </button>
+    </div>
+  );
+}
+
+// ── Day Phase Panel ───────────────────────────────────────────
+function DayPanel({
+  players,
+  gameId,
+  onRefresh,
+}: {
+  players: Player[];
+  gameId: string;
+  onRefresh: () => void;
+}) {
+  const [selId, setSelId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const alivePlayers = players.filter((p) => p.status === "alive");
+
+  async function doExecute() {
+    if (!selId) return;
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "execute_vote",
+        gameId,
+        payload: { playerId: selId },
+      }),
+    });
+    setSelId(null);
+    setConfirm(false);
+    onRefresh();
+  }
+
+  async function startNight() {
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start_night", gameId, payload: {} }),
+    });
+    onRefresh();
+  }
+
+  return (
+    <div style={S.panel}>
+      <div
+        style={{
+          padding: "8px 16px",
+          borderRadius: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(240,192,64,0.12)",
+          border: "1px solid #4a3a00",
+          color: "#f0c040",
+          fontWeight: 800,
+          marginBottom: 12,
+        }}
+      >
+        ☀️ Fase Siang
+      </div>
+      <div style={S.sectionTitle}>
+        <span>🗳️</span> Sesi Voting
+      </div>
+      <div style={S.narasi("#f0c040")}>
+        Semua pemain berdiskusi. Klik nama yang{" "}
+        <strong>disepakati forum</strong> untuk dieksekusi.
+      </div>
+      <PlayerGrid
+        players={players}
+        selectedId={selId}
+        onSelect={setSelId}
+        showRoles
+      />
+
+      {selId && !confirm && (
+        <button
+          onClick={() => setConfirm(true)}
+          style={{
+            ...S.btn("linear-gradient(135deg,#b91c1c,#dc2626)"),
+            marginTop: 16,
+          }}
+        >
+          ⚖️ Eksekusi {players.find((p) => p.id === selId)?.name}
+        </button>
+      )}
+      {confirm && (
+        <div
+          style={{
+            marginTop: 16,
+            background: "rgba(220,50,50,0.1)",
+            border: "1px solid #5f1e1e",
+            borderRadius: 10,
+            padding: 16,
+            textAlign: "center",
+          }}
+        >
+          <p style={{ color: "#f87171", fontWeight: 700, margin: "0 0 12px" }}>
+            Yakin eksekusi{" "}
+            <strong>{players.find((p) => p.id === selId)?.name}</strong>? Tidak
+            bisa dibatalkan.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => setConfirm(false)}
+              style={{ ...S.btn("#21262d"), border: "1px solid #30363d" }}
+            >
+              Batal
+            </button>
+            <button
+              onClick={doExecute}
+              style={S.btn("linear-gradient(135deg,#b91c1c,#dc2626)")}
+            >
+              ⚖️ Eksekusi!
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={startNight}
+        style={{
+          ...S.btn("#21262d"),
+          border: "1px solid #30363d",
+          marginTop: 12,
+        }}
+      >
+        🌙 Akhiri Siang → Mulai Malam
+      </button>
+    </div>
+  );
+}
+
+// ── Distribution Panel ────────────────────────────────────────
+function DistributionPanel({
+  cards,
+  players,
+  gameId,
+  onRefresh,
+}: {
+  cards: Card[];
+  players: Player[];
+  gameId: string;
+  onRefresh: () => void;
+}) {
+  const picked = cards.filter((c) => c.picked).length;
+  const total = cards.length;
+
+  async function startGame() {
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start_night", gameId, payload: {} }),
+    });
+    onRefresh();
+  }
+
+  return (
+    <div style={S.panel}>
+      <div style={S.sectionTitle}>
+        <span>🃏</span> Distribusi Peran
+      </div>
+      <div style={S.narasi()}>
+        Pemain membuka <strong>/play/{gameId}</strong> di HP masing-masing dan
+        memilih kartu. Kartu yang sudah dipilih terkunci otomatis secara
+        realtime.
+      </div>
+      <div
+        style={{
+          background: "#1c2330",
+          borderRadius: 8,
+          padding: "10px 14px",
+          marginBottom: 16,
+          textAlign: "center",
+          color: "#8b949e",
+          fontSize: "0.82rem",
+        }}
+      >
+        {picked} / {total} pemain terdaftar
+        <div
+          style={{
+            height: 4,
+            background: "#30363d",
+            borderRadius: 2,
+            marginTop: 8,
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${total ? (picked / total) * 100 : 0}%`,
+              background: "#3fb950",
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+      {/* Show role list for moderator */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        {cards.map((card) => {
+          const p = players.find((pl) => pl.card_id === card.id);
+          const info = ROLE_INFO[card.role];
+          return (
+            <div
+              key={card.id}
+              style={{
+                background: card.picked ? "#0f2a1a" : "#1c2330",
+                border: `2px solid ${card.picked ? "#3fb950" : "#30363d"}`,
+                borderRadius: 10,
+                padding: "10px 6px",
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 800,
+                  color: card.picked ? "#3fb950" : "#8b949e",
+                }}
+              >
+                #{card.slot}
+              </div>
+              {card.picked && p ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: "0.88rem",
+                      fontWeight: 700,
+                      color: "#e6edf3",
+                      margin: "4px 0 2px",
+                    }}
+                  >
+                    {p.name}
+                  </div>
+                  <div style={{ fontSize: "0.65rem", color: info.color }}>
+                    {info.emoji} {card.role}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: "1.4rem" }}>{info.emoji}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {picked === total && total > 0 && (
+        <button
+          onClick={startGame}
+          style={S.btn("linear-gradient(135deg,#1a7f37,#2ea043)")}
+        >
+          ✅ Semua Siap — Mulai Malam Pertama
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Main Moderator Page ───────────────────────────────────────
+export default function ModeratorPage({
+  params,
+}: {
+  params: Promise<{ gameId: string }>;
+}) {
+  const supabase = createClient();
+  const { gameId } = use(params);
+
+  const [game, setGame] = useState<Game | null>(null);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [isSetup, setIsSetup] = useState(!gameId || gameId === "new");
+
+  const loadData = useCallback(async () => {
+    if (!gameId || gameId === "new") return;
+    const [{ data: g }, { data: c }, { data: p }] = await Promise.all([
+      supabase.from("games").select("*").eq("id", gameId).single(),
+      supabase.from("cards").select("*").eq("game_id", gameId).order("slot"),
+      supabase.from("players").select("*").eq("game_id", gameId).order("slot"),
+    ]);
+    if (g) setGame(g as Game);
+    if (c) setCards(c as Card[]);
+    if (p) setPlayers(p as Player[]);
+  }, [gameId, supabase]);
+
+  useEffect(() => {
+    loadData();
+    if (gameId === "new") return;
+    const ch = supabase
+      .channel(`mod:${gameId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "games",
+          filter: `id=eq.${gameId}`,
+        },
+        loadData
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cards",
+          filter: `game_id=eq.${gameId}`,
+        },
+        loadData
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `game_id=eq.${gameId}`,
+        },
+        loadData
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [gameId, loadData, supabase]);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
+
+  if (gameId === "new" || isSetup) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#0d0f14",
+          color: "#e6edf3",
+          fontFamily: '"Segoe UI", system-ui, sans-serif',
+          padding: "0 0 40px",
+        }}
+      >
+        <div
+          style={{
+            background: "linear-gradient(135deg,#1a0a2e,#0d1117)",
+            borderBottom: "1px solid #3d1f1f",
+            padding: "14px 20px",
+            textAlign: "center",
+          }}
+        >
+          <h1
+            style={{
+              color: "#f0c040",
+              fontWeight: 800,
+              fontSize: "1.3rem",
+              margin: 0,
+            }}
+          >
+            🐺 WEREWOLF — Moderator
+          </h1>
+        </div>
+        <div style={{ padding: "16px 12px" }}>
+          <SetupPanel
+            onGameCreated={(gId) => {
+              window.location.href = `/moderator/${gId}`;
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (!game)
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#0d0f14",
+        }}
+      >
+        <p style={{ color: "#8b949e" }}>Memuat...</p>
+      </div>
+    );
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0d0f14",
+        color: "#e6edf3",
+        fontFamily: '"Segoe UI", system-ui, sans-serif',
+        padding: "0 0 40px",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1a0a2e,#0d1117)",
+          borderBottom: "1px solid #3d1f1f",
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              color: "#f0c040",
+              fontWeight: 800,
+              fontSize: "1.1rem",
+              margin: 0,
+            }}
+          >
+            🐺 WEREWOLF — Mod
+          </h1>
+          <p
+            style={{ color: "#8b949e", fontSize: "0.72rem", margin: "2px 0 0" }}
+          >
+            Kode: <strong style={{ color: "#e6edf3" }}>{game.code}</strong>
+          </p>
+        </div>
+        <button
+          onClick={handleSignOut}
+          style={{
+            padding: "6px 12px",
+            background: "#21262d",
+            color: "#8b949e",
+            border: "1px solid #30363d",
+            borderRadius: 6,
+            cursor: "pointer",
+            fontSize: "0.75rem",
+          }}
+        >
+          Keluar
+        </button>
+      </div>
+
+      <div style={{ padding: "14px 12px" }}>
+        {/* Status bar always visible */}
+        <div style={{ ...S.panel, marginBottom: 12 }}>
+          <StatusBar players={players} />
+        </div>
+
+        {game.phase === "distribution" && (
+          <DistributionPanel
+            cards={cards}
+            players={players}
+            gameId={gameId}
+            onRefresh={loadData}
+          />
+        )}
+        {game.phase === "night" && (
+          <NightPanel
+            game={game}
+            players={players}
+            gameId={gameId}
+            onRefresh={loadData}
+          />
+        )}
+        {game.phase === "day" && (
+          <DayPanel players={players} gameId={gameId} onRefresh={loadData} />
+        )}
+        {game.phase === "gameover" && (
+          <div style={{ ...S.panel, textAlign: "center", padding: 32 }}>
+            <div style={{ fontSize: "4rem" }}>
+              {game.winner === "warga" ? "🎉" : "🐺"}
+            </div>
+            <h2
+              style={{
+                color: game.winner === "warga" ? "#3fb950" : "#f87171",
+                fontWeight: 800,
+              }}
+            >
+              {game.winner === "warga" ? "WARGA MENANG!" : "WEREWOLF MENANG!"}
+            </h2>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginTop: 20,
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              {players
+                .filter((p) => p.status === "alive")
+                .map((p) => (
+                  <span
+                    key={p.id}
+                    style={{
+                      padding: "5px 12px",
+                      background: "rgba(63,185,80,0.15)",
+                      border: "1px solid #3fb950",
+                      borderRadius: 20,
+                      color: "#3fb950",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {ROLE_INFO[p.role].emoji} {p.name}
+                  </span>
+                ))}
+            </div>
+            <button
+              onClick={() => {
+                window.location.href = "/moderator/new";
+              }}
+              style={{
+                ...S.btn("linear-gradient(135deg,#1f6feb,#388bfd)"),
+                marginTop: 24,
+                maxWidth: 280,
+              }}
+            >
+              🔄 Main Lagi
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

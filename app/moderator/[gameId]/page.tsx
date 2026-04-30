@@ -380,12 +380,12 @@ function NightPanel({
       title: "🐺 Giliran Werewolf",
       accent: "#e05252",
       narasi:
-        '"Semua warga, pejamkan mata... Werewolf, buka mata kalian." Persilakan Werewolf memilih korban malam ini.',
+        '"Semua warga, pejamkan mata... Werewolf, buka mata kalian." Werewolf sedang berdiskusi via perangkat mereka untuk memilih korban.',
       btnLabel: "Selesai, Lanjut ke Dokter ➔",
       nextAction: () => {
         callAction("night_step", {
           step: "dokter",
-          actions: { ...game.night_actions, killId: selId },
+          actions: { ...game.night_actions, killId: selId || game.night_actions?.killId },
         });
         setSelId(null);
       },
@@ -497,11 +497,26 @@ function NightPanel({
         </div>
       )}
 
+      {step === "werewolf" && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(224,82,82,0.1)", border: "1px solid #e05252", textAlign: "center" }}>
+          <h4 style={{ margin: "0 0 8px", color: "#fca5a5" }}>Status Diskusi Werewolf:</h4>
+          {game.night_actions?.killId ? (
+            <p style={{ margin: 0, fontWeight: "bold", color: "#e05252" }}>
+              ✅ Werewolf sepakat membunuh: {players.find(p => p.id === game.night_actions.killId)?.name}
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
+              ⏳ Menunggu para Werewolf mencapai mufakat...
+            </p>
+          )}
+        </div>
+      )}
+
       <PlayerGrid
         players={
           step === "werewolf" ? alivePlayers.filter(cfg.filter) : alivePlayers
         }
-        selectedId={selId}
+        selectedId={selId || (step === "werewolf" && !selId ? game.night_actions?.killId || null : null)}
         onSelect={step === "peramal" ? checkSeer : setSelId}
         showRoles
       />
@@ -604,11 +619,52 @@ function DayPanel({
         ☀️ Fase Siang
       </div>
 
+      <div style={{ background: "rgba(255,255,255,0.05)", borderLeft: "3px solid #f0c040", padding: "12px", borderRadius: "0 8px 8px 0", marginBottom: 16 }}>
+        <h4 style={{ margin: "0 0 8px", color: "#f0c040", fontSize: "0.85rem", textTransform: "uppercase" }}>📜 Kabar Semalam:</h4>
+        {(() => {
+          const actions = game.night_actions as any;
+          const killId = actions?.killId;
+          const healId = actions?.healId;
+          const hunterKillId = actions?.hunterKillId;
+          
+          if (!actions || (!killId && !hunterKillId && game.night_round === 0)) {
+             return <p style={{ margin: 0, fontSize: "0.85rem", color: "#8b949e" }}>Belum ada kabar.</p>;
+          }
+
+          return (
+            <>
+              {killId && killId === healId && (
+                <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#86efac" }}>🐺💉 Semalam, Werewolf mencoba menyerang, tetapi Dokter berhasil menyelamatkan nyawanya!</p>
+              )}
+              {killId && killId !== healId && (
+                <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#fca5a5" }}>🐺🩸 Semalam, <strong>{players.find(p => p.id === killId)?.name}</strong> tewas diserang Werewolf!</p>
+              )}
+              {!killId && game.night_round > 0 && (
+                 <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#e6edf3" }}>🌙 Malam berlalu dengan tenang. Tidak ada korban serangan Werewolf.</p>
+              )}
+              {hunterKillId && (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh <strong>{players.find(p => p.id === hunterKillId)?.name}</strong>!</p>
+              )}
+            </>
+          );
+        })()}
+      </div>
+
       {mode === "choose" && (
         <>
           <div style={S.narasi("#f0c040")}>
             Semua pemain berdiskusi. Moderator memilih cara eksekusi:
           </div>
+          
+          <div style={{ marginBottom: 16 }}>
+            <PlayerGrid
+              players={players}
+              selectedId={null}
+              onSelect={() => {}}
+              showRoles
+            />
+          </div>
+
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <button
               onClick={() => setMode("voting")}

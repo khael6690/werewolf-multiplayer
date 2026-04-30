@@ -678,9 +678,13 @@ function VotingPlayerPanel({
 function PlayerDashboard({
   players,
   game,
+  myRole,
+  wwList,
 }: {
   players: PlayerPublic[];
   game: Game;
+  myRole: Role | null;
+  wwList: string[];
 }) {
   const alive = players.filter((p) => p.status === "alive").length;
   const dead = players.filter((p) => p.status === "dead").length;
@@ -699,6 +703,127 @@ function PlayerDashboard({
   // If voting phase, render the voting UI instead
   if (game.phase === "voting") {
     return <VotingPlayerPanel game={game} players={players} />;
+  }
+
+  // Werewolf Night UI
+  if (game.phase === "night" && game.night_step === "werewolf" && myRole === "Werewolf" && myId) {
+    const isMeDead = players.find(p => p.id === myId)?.status === "dead";
+    if (!isMeDead) {
+      const wwVotes = (game.night_actions as any)?.wwVotes || {};
+      const confirmedKill = game.night_actions?.killId;
+      const aliveWWs = players.filter((p) => p.status === "alive" && wwList.includes(p.id));
+      const aliveTargets = players.filter((p) => p.status === "alive" && !wwList.includes(p.id));
+
+      const voteCounts: Record<string, number> = {};
+      Object.values(wwVotes).forEach((targetId) => {
+        voteCounts[targetId as string] = (voteCounts[targetId as string] || 0) + 1;
+      });
+      
+      let consensusTarget: string | null = null;
+      for (const [targetId, count] of Object.entries(voteCounts)) {
+        if (count === aliveWWs.length && aliveWWs.length > 0) {
+          consensusTarget = targetId;
+          break;
+        }
+      }
+
+      async function castWWVote(targetId: string) {
+        if (confirmedKill) return;
+        await fetch("/api/game/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ww_vote",
+            gameId: game.id,
+            payload: { voterId: myId, targetId },
+          }),
+        });
+      }
+
+      async function confirmKill() {
+        if (!consensusTarget || confirmedKill) return;
+        await fetch("/api/game/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ww_confirm_kill",
+            gameId: game.id,
+            payload: { targetId: consensusTarget },
+          }),
+        });
+      }
+
+      if (confirmedKill) {
+        return (
+          <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+            <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+              <h3 style={{ color: "#f87171", margin: "0 0 10px" }}>Pilihan Dikunci</h3>
+              <p style={{ color: "#8b949e", fontSize: "0.85rem" }}>Target telah dikirim ke moderator. Menunggu fase selanjutnya...</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+          <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20 }}>
+            <h3 style={{ color: "#f87171", margin: "0 0 10px" }}>🐺 Pilih Korban</h3>
+            <p style={{ fontSize: "0.8rem", color: "#8b949e", marginBottom: 16 }}>
+              Semua Werewolf yang hidup harus memilih target yang sama agar bisa mengeksekusi.
+            </p>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {aliveTargets.map(t => {
+                const votesForThis = Object.entries(wwVotes).filter(([_, v]) => v === t.id).map(([k, _]) => k);
+                const isMyVote = wwVotes[myId] === t.id;
+
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => castWWVote(t.id)}
+                    style={{
+                      background: isMyVote ? "rgba(248,113,113,0.15)" : "#0d1117",
+                      border: `1px solid ${isMyVote ? "#ef4444" : "#30363d"}`,
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      textAlign: "left"
+                    }}
+                  >
+                    <span style={{ color: isMyVote ? "#fca5a5" : "#e6edf3", fontWeight: "bold" }}>{t.name}</span>
+                    <span style={{ fontSize: "0.75rem", color: isMyVote ? "#ef4444" : "#8b949e" }}>
+                      {votesForThis.length} suara {votesForThis.length > 0 && `(${votesForThis.map(vid => players.find(p=>p.id===vid)?.name).join(", ")})`}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {consensusTarget && (
+              <button
+                onClick={confirmKill}
+                style={{
+                  width: "100%",
+                  padding: "10px 0",
+                  background: "linear-gradient(135deg,#b91c1c,#dc2626)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginTop: 16
+                }}
+              >
+                🔪 Sepakat! Bunuh {players.find(p => p.id === consensusTarget)?.name}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
   }
 
   return (
@@ -724,6 +849,40 @@ function PlayerDashboard({
           </p>
         )}
       </div>
+
+      {game.phase === "day" && (
+        <div style={{ background: "rgba(255,255,255,0.05)", borderLeft: "3px solid #f0c040", padding: "12px", borderRadius: "0 8px 8px 0", marginBottom: 16 }}>
+          <h4 style={{ margin: "0 0 8px", color: "#f0c040", fontSize: "0.85rem", textTransform: "uppercase" }}>📜 Kabar Semalam:</h4>
+          {(() => {
+            const actions = game.night_actions as any;
+            const killId = actions?.killId;
+            const healId = actions?.healId;
+            const hunterKillId = actions?.hunterKillId;
+            
+            if (!actions || (!killId && !hunterKillId && game.night_round === 0)) {
+               return <p style={{ margin: 0, fontSize: "0.85rem", color: "#8b949e" }}>Belum ada kabar.</p>;
+            }
+
+            return (
+              <>
+                {killId && killId === healId && (
+                  <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#86efac" }}>🐺💉 Semalam, Werewolf mencoba menyerang, tetapi Dokter berhasil menyelamatkan nyawanya!</p>
+                )}
+                {killId && killId !== healId && (
+                  <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#fca5a5" }}>🐺🩸 Semalam, <strong>{players.find(p => p.id === killId)?.name}</strong> tewas diserang Werewolf!</p>
+                )}
+                {!killId && game.night_round > 0 && (
+                   <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#e6edf3" }}>🌙 Malam berlalu dengan tenang. Tidak ada korban serangan Werewolf.</p>
+                )}
+                {hunterKillId && (
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh <strong>{players.find(p => p.id === hunterKillId)?.name}</strong>!</p>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <span
           style={{
@@ -876,6 +1035,8 @@ export default function PlayPage({
   const [cards, setCards] = useState<CardPublic[]>([]);
   const [players, setPlayers] = useState<PlayerPublic[]>([]);
   const [hasPicked, setHasPicked] = useState(false);
+  const [myRole, setMyRole] = useState<Role | null>(null);
+  const [wwList, setWwList] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
     const [{ data: g }, { data: c }, { data: p }] = await Promise.all([
@@ -903,6 +1064,18 @@ export default function PlayPage({
           player_name: card.player_id ? pMap[card.player_id] : undefined,
         })),
       );
+    }
+    
+    const myId = typeof window !== "undefined" ? sessionStorage.getItem(`player_${gameId}`) : null;
+    if (myId) {
+      const { data: myData } = await supabase.from("players").select("role").eq("id", myId).single();
+      if (myData) {
+        setMyRole(myData.role as Role);
+        if (myData.role === "Werewolf") {
+          const { data: wws } = await supabase.from("players").select("id").eq("game_id", gameId).eq("role", "Werewolf");
+          if (wws) setWwList(wws.map((w: any) => w.id));
+        }
+      }
     }
   }, [gameId, supabase]);
 
@@ -1001,7 +1174,7 @@ export default function PlayPage({
           onPick={() => setHasPicked(true)}
         />
       ) : (
-        <PlayerDashboard players={players} game={game} />
+        <PlayerDashboard players={players} game={game} myRole={myRole} wwList={wwList} />
       )}
       <style>{`@keyframes pop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }`}</style>
     </div>

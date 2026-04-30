@@ -5,13 +5,16 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   const supabase = await createServerSupabase();
+  const { action, gameId, payload } = await request.json();
+
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { action, gameId, payload } = await request.json();
+  const isPlayerAction = ["cast_vote", "ww_vote", "ww_confirm_kill"].includes(action);
+
+  if (!session && !isPlayerAction)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,11 +27,10 @@ export async function POST(request: Request) {
     .eq("id", gameId)
     .single();
 
-  // Some actions don't require moderator auth (e.g. cast_vote by player)
-  const isModerator = game && game.moderator_id === session.user.id;
-  const isPlayerAction = action === "cast_vote";
-
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
+
+  // Some actions don't require moderator auth
+  const isModerator = session && game && game.moderator_id === session.user.id;
   if (!isModerator && !isPlayerAction)
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -50,6 +52,31 @@ export async function POST(request: Request) {
         .update({ night_step: payload.step, night_actions: payload.actions })
         .eq("id", gameId);
       break;
+    case "ww_vote": {
+      const { voterId, targetId } = payload;
+      const { data: voter } = await admin.from("players").select("*").eq("id", voterId).single();
+      if (!voter || voter.role !== "Werewolf" || voter.status !== "alive")
+        return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
+
+      const currentActions = (game.night_actions as any) || {};
+      const wwVotes = currentActions.wwVotes || {};
+      wwVotes[voterId] = targetId;
+
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions, wwVotes } })
+        .eq("id", gameId);
+      break;
+    }
+    case "ww_confirm_kill": {
+      const { targetId } = payload;
+      const currentActions = (game.night_actions as any) || {};
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions, killId: targetId } })
+        .eq("id", gameId);
+      break;
+    }
     case "process_night": {
       const { killId, healId } = payload;
       let killed = null;

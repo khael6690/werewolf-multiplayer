@@ -380,12 +380,12 @@ function NightPanel({
       title: "🐺 Giliran Werewolf",
       accent: "#e05252",
       narasi:
-        '"Semua warga, pejamkan mata... Werewolf, buka mata kalian." Persilakan Werewolf memilih korban malam ini.',
+        '"Semua warga, pejamkan mata... Werewolf, buka mata kalian." Werewolf sedang berdiskusi via perangkat mereka untuk memilih korban.',
       btnLabel: "Selesai, Lanjut ke Dokter ➔",
       nextAction: () => {
         callAction("night_step", {
           step: "dokter",
-          actions: { ...game.night_actions, killId: selId },
+          actions: { ...game.night_actions, killId: selId || game.night_actions?.killId },
         });
         setSelId(null);
       },
@@ -497,11 +497,26 @@ function NightPanel({
         </div>
       )}
 
+      {step === "werewolf" && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(224,82,82,0.1)", border: "1px solid #e05252", textAlign: "center" }}>
+          <h4 style={{ margin: "0 0 8px", color: "#fca5a5" }}>Status Diskusi Werewolf:</h4>
+          {game.night_actions?.killId ? (
+            <p style={{ margin: 0, fontWeight: "bold", color: "#e05252" }}>
+              ✅ Werewolf sepakat membunuh: {players.find(p => p.id === game.night_actions.killId)?.name}
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
+              ⏳ Menunggu para Werewolf mencapai mufakat...
+            </p>
+          )}
+        </div>
+      )}
+
       <PlayerGrid
         players={
           step === "werewolf" ? alivePlayers.filter(cfg.filter) : alivePlayers
         }
-        selectedId={selId}
+        selectedId={selId || (step === "werewolf" && !selId ? game.night_actions?.killId || null : null)}
         onSelect={step === "peramal" ? checkSeer : setSelId}
         showRoles
       />

@@ -50,6 +50,31 @@ export async function POST(request: Request) {
         .update({ night_step: payload.step, night_actions: payload.actions })
         .eq("id", gameId);
       break;
+    case "ww_vote": {
+      const { voterId, targetId } = payload;
+      const { data: voter } = await admin.from("players").select("*").eq("id", voterId).single();
+      if (!voter || voter.role !== "Werewolf" || voter.status !== "alive")
+        return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
+
+      const currentActions = (game.night_actions as any) || {};
+      const wwVotes = currentActions.wwVotes || {};
+      wwVotes[voterId] = targetId;
+
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions, wwVotes } })
+        .eq("id", gameId);
+      break;
+    }
+    case "ww_confirm_kill": {
+      const { targetId } = payload;
+      const currentActions = (game.night_actions as any) || {};
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions, killId: targetId } })
+        .eq("id", gameId);
+      break;
+    }
     case "process_night": {
       const { killId, healId } = payload;
       let killed = null;

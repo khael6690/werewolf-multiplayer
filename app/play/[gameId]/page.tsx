@@ -200,7 +200,7 @@ function CardPickScreen({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
           gap: 10,
         }}
       >
@@ -407,7 +407,7 @@ function VotingPlayerPanel({
       </div>
 
       {/* Candidate cards */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
         {candidates.map((cId) => {
           const p = players.find((x) => x.id === cId);
           if (!p) return null;
@@ -425,6 +425,7 @@ function VotingPlayerPanel({
               disabled={!canVote || voting}
               style={{
                 flex: 1,
+                minWidth: 130,
                 background: isMyVoteTarget
                   ? "rgba(168,85,247,0.15)"
                   : isLeading
@@ -769,7 +770,7 @@ function PlayerDashboard({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
           gap: 8,
         }}
       >
@@ -817,28 +818,47 @@ function PlayerDashboard({
         ))}
       </div>
       {game.phase === "gameover" && (
-        <div
-          style={{
-            marginTop: 20,
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0,0,0,0.8)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 9999,
+          padding: 16,
+        }}>
+          <div style={{
             background: "#1c2330",
             border: "1px solid #30363d",
-            borderRadius: 12,
-            padding: 20,
+            borderRadius: 16,
+            padding: 32,
             textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "3rem" }}>
-            {game.winner === "warga" ? "🎉" : "🐺"}
+            maxWidth: 400,
+            width: "100%",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            animation: "pop 0.3s ease",
+          }}>
+            <div style={{ fontSize: "4rem", marginBottom: 10 }}>
+              {game.winner === "warga" ? "🎉" : "🐺"}
+            </div>
+            <h2
+              style={{
+                color: game.winner === "warga" ? "#3fb950" : "#f87171",
+                fontWeight: 900,
+                fontSize: "2rem",
+                margin: "0 0 16px",
+              }}
+            >
+              {game.winner === "warga" ? "WARGA MENANG!" : "WEREWOLF MENANG!"}
+            </h2>
+            <p style={{ color: "#8b949e", fontSize: "0.9rem" }}>
+              Cek layar moderator untuk memulai game baru.
+            </p>
           </div>
-          <h3
-            style={{
-              color: game.winner === "warga" ? "#3fb950" : "#f87171",
-              fontWeight: 800,
-              margin: "8px 0 4px",
-            }}
-          >
-            {game.winner === "warga" ? "WARGA MENANG!" : "WEREWOLF MENANG!"}
-          </h3>
         </div>
       )}
     </div>

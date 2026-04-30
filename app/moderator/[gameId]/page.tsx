@@ -518,19 +518,31 @@ function NightPanel({
   );
 }
 
-// ── Day Phase Panel ───────────────────────────────────────────
+// ── Day Phase Panel (with voting option) ─────────────────────
 function DayPanel({
+  game,
   players,
   gameId,
   onRefresh,
 }: {
+  game: Game;
   players: Player[];
   gameId: string;
   onRefresh: () => void;
 }) {
+  const [mode, setMode] = useState<"choose" | "direct" | "voting">("choose");
   const [selId, setSelId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [candidates, setCandidates] = useState<string[]>([]);
   const alivePlayers = players.filter((p) => p.status === "alive");
+
+  function toggleCandidate(id: string) {
+    setCandidates((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  }
 
   async function doExecute() {
     if (!selId) return;
@@ -545,6 +557,22 @@ function DayPanel({
     });
     setSelId(null);
     setConfirm(false);
+    onRefresh();
+  }
+
+  async function doStartVoting() {
+    if (candidates.length !== 2) return;
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "start_voting",
+        gameId,
+        payload: { candidateIds: candidates },
+      }),
+    });
+    setCandidates([]);
+    setMode("choose");
     onRefresh();
   }
 
@@ -575,62 +603,218 @@ function DayPanel({
       >
         ☀️ Fase Siang
       </div>
-      <div style={S.sectionTitle}>
-        <span>🗳️</span> Sesi Voting
-      </div>
-      <div style={S.narasi("#f0c040")}>
-        Semua pemain berdiskusi. Klik nama yang{" "}
-        <strong>disepakati forum</strong> untuk dieksekusi.
-      </div>
-      <PlayerGrid
-        players={players}
-        selectedId={selId}
-        onSelect={setSelId}
-        showRoles
-      />
 
-      {selId && !confirm && (
-        <button
-          onClick={() => setConfirm(true)}
-          style={{
-            ...S.btn("linear-gradient(135deg,#b91c1c,#dc2626)"),
-            marginTop: 16,
-          }}
-        >
-          ⚖️ Eksekusi {players.find((p) => p.id === selId)?.name}
-        </button>
-      )}
-      {confirm && (
-        <div
-          style={{
-            marginTop: 16,
-            background: "rgba(220,50,50,0.1)",
-            border: "1px solid #5f1e1e",
-            borderRadius: 10,
-            padding: 16,
-            textAlign: "center",
-          }}
-        >
-          <p style={{ color: "#f87171", fontWeight: 700, margin: "0 0 12px" }}>
-            Yakin eksekusi{" "}
-            <strong>{players.find((p) => p.id === selId)?.name}</strong>? Tidak
-            bisa dibatalkan.
-          </p>
-          <div style={{ display: "flex", gap: 8 }}>
+      {mode === "choose" && (
+        <>
+          <div style={S.narasi("#f0c040")}>
+            Semua pemain berdiskusi. Moderator memilih cara eksekusi:
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <button
-              onClick={() => setConfirm(false)}
-              style={{ ...S.btn("#21262d"), border: "1px solid #30363d" }}
+              onClick={() => setMode("voting")}
+              style={{
+                ...S.btn("linear-gradient(135deg,#7c3aed,#a855f7)"),
+                flex: 1,
+              }}
             >
-              Batal
+              🗳️ Mulai Voting
             </button>
             <button
-              onClick={doExecute}
-              style={S.btn("linear-gradient(135deg,#b91c1c,#dc2626)")}
+              onClick={() => setMode("direct")}
+              style={{
+                ...S.btn("#21262d"),
+                flex: 1,
+                border: "1px solid #30363d",
+              }}
             >
-              ⚖️ Eksekusi!
+              ⚖️ Eksekusi Langsung
             </button>
           </div>
-        </div>
+        </>
+      )}
+
+      {mode === "voting" && (
+        <>
+          <div style={S.sectionTitle}>
+            <span>🗳️</span> Pilih 2 Kandidat Voting
+          </div>
+          <div style={S.narasi("#a855f7")}>
+            Pilih <strong>2 pemain</strong> yang akan di-voting oleh seluruh pemain.
+            Pemain dengan suara terbanyak akan dieksekusi.
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 8,
+            }}
+          >
+            {alivePlayers.map((p) => {
+              const info = ROLE_INFO[p.role];
+              const isSel = candidates.includes(p.id);
+              const canSelect = candidates.length < 2 || isSel;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggleCandidate(p.id)}
+                  disabled={!canSelect && !isSel}
+                  style={{
+                    background: isSel
+                      ? "linear-gradient(135deg,#2d1b69,#1a0a3e)"
+                      : "#1c2330",
+                    border: `2px solid ${isSel ? "#a855f7" : "#30363d"}`,
+                    borderRadius: 10,
+                    padding: "10px 6px",
+                    textAlign: "center",
+                    cursor: canSelect ? "pointer" : "not-allowed",
+                    transition: "all 0.2s",
+                    boxShadow: isSel
+                      ? "0 0 16px rgba(168,85,247,0.3)"
+                      : "none",
+                    opacity: !canSelect && !isSel ? 0.4 : 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "0.88rem",
+                      color: isSel ? "#d8b4fe" : "#e6edf3",
+                    }}
+                  >
+                    {p.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.65rem",
+                      marginTop: 3,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: "rgba(255,255,255,0.08)",
+                      color: info.color,
+                    }}
+                  >
+                    {info.emoji} {p.role}
+                  </div>
+                  {isSel && (
+                    <div
+                      style={{
+                        fontSize: "0.65rem",
+                        color: "#a855f7",
+                        marginTop: 3,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ✦ Kandidat {candidates.indexOf(p.id) + 1}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {candidates.length === 2 && (
+            <button
+              onClick={doStartVoting}
+              style={{
+                ...S.btn("linear-gradient(135deg,#7c3aed,#a855f7)"),
+                marginTop: 16,
+              }}
+            >
+              🗳️ Mulai Voting —{" "}
+              {candidates
+                .map((id) => players.find((p) => p.id === id)?.name)
+                .join(" vs ")}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setMode("choose");
+              setCandidates([]);
+            }}
+            style={{
+              ...S.btn("#21262d"),
+              border: "1px solid #30363d",
+              marginTop: 8,
+            }}
+          >
+            ← Kembali
+          </button>
+        </>
+      )}
+
+      {mode === "direct" && (
+        <>
+          <div style={S.sectionTitle}>
+            <span>⚖️</span> Eksekusi Langsung
+          </div>
+          <div style={S.narasi("#f0c040")}>
+            Klik nama yang <strong>disepakati forum</strong> untuk dieksekusi.
+          </div>
+          <PlayerGrid
+            players={players}
+            selectedId={selId}
+            onSelect={setSelId}
+            showRoles
+          />
+          {selId && !confirm && (
+            <button
+              onClick={() => setConfirm(true)}
+              style={{
+                ...S.btn("linear-gradient(135deg,#b91c1c,#dc2626)"),
+                marginTop: 16,
+              }}
+            >
+              ⚖️ Eksekusi {players.find((p) => p.id === selId)?.name}
+            </button>
+          )}
+          {confirm && (
+            <div
+              style={{
+                marginTop: 16,
+                background: "rgba(220,50,50,0.1)",
+                border: "1px solid #5f1e1e",
+                borderRadius: 10,
+                padding: 16,
+                textAlign: "center",
+              }}
+            >
+              <p
+                style={{ color: "#f87171", fontWeight: 700, margin: "0 0 12px" }}
+              >
+                Yakin eksekusi{" "}
+                <strong>{players.find((p) => p.id === selId)?.name}</strong>?
+                Tidak bisa dibatalkan.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setConfirm(false)}
+                  style={{ ...S.btn("#21262d"), border: "1px solid #30363d" }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={doExecute}
+                  style={S.btn("linear-gradient(135deg,#b91c1c,#dc2626)")}
+                >
+                  ⚖️ Eksekusi!
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setMode("choose");
+              setSelId(null);
+              setConfirm(false);
+            }}
+            style={{
+              ...S.btn("#21262d"),
+              border: "1px solid #30363d",
+              marginTop: 8,
+            }}
+          >
+            ← Kembali
+          </button>
+        </>
       )}
 
       <button
@@ -643,6 +827,423 @@ function DayPanel({
       >
         🌙 Akhiri Siang → Mulai Malam
       </button>
+    </div>
+  );
+}
+
+// ── Voting Moderator Panel ───────────────────────────────────
+function VotingModeratorPanel({
+  game,
+  players,
+  gameId,
+  onRefresh,
+}: {
+  game: Game;
+  players: Player[];
+  gameId: string;
+  onRefresh: () => void;
+}) {
+  const supabase = createClient();
+  const [votes, setVotes] = useState<
+    { voter_id: string; target_id: string }[]
+  >([]);
+  const [tiebreaker, setTiebreaker] = useState<string | null>(null);
+  const [tieResult, setTieResult] = useState<{
+    tie: boolean;
+    tally: Record<string, number>;
+    candidates: string[];
+  } | null>(null);
+
+  const candidates = (game.vote_candidates ?? []) as string[];
+  const alivePlayers = players.filter((p) => p.status === "alive");
+  const eligibleVoters = alivePlayers.filter(
+    (p) => !candidates.includes(p.id)
+  );
+
+  const loadVotes = useCallback(async () => {
+    const { data } = await supabase
+      .from("votes")
+      .select("voter_id,target_id")
+      .eq("game_id", gameId)
+      .eq("round", game.vote_round);
+    if (data) setVotes(data);
+  }, [gameId, game.vote_round, supabase]);
+
+  useEffect(() => {
+    loadVotes();
+    const ch = supabase
+      .channel(`votes:${gameId}:${game.vote_round}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "votes",
+          filter: `game_id=eq.${gameId}`,
+        },
+        loadVotes
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [gameId, game.vote_round, loadVotes, supabase]);
+
+  const tally: Record<string, number> = {};
+  candidates.forEach((id) => (tally[id] = 0));
+  votes.forEach((v) => {
+    tally[v.target_id] = (tally[v.target_id] ?? 0) + 1;
+  });
+
+  const totalVotes = votes.length;
+  const totalEligible = eligibleVoters.length;
+  const maxVotes = Math.max(...Object.values(tally), 0);
+
+  async function handleEndVoting() {
+    const res = await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "end_voting",
+        gameId,
+        payload: tiebreaker ? { tiebreakerId: tiebreaker } : {},
+      }),
+    });
+    const data = await res.json();
+    if (data.tie) {
+      setTieResult(data);
+    } else {
+      setTieResult(null);
+      onRefresh();
+    }
+  }
+
+  async function handleCancelVoting() {
+    // Return to day phase
+    const admin = createClient();
+    await admin
+      .from("games")
+      .update({ phase: "day", vote_candidates: [] })
+      .eq("id", gameId);
+    onRefresh();
+  }
+
+  function getPlayerName(id: string) {
+    return players.find((p) => p.id === id)?.name ?? "Unknown";
+  }
+
+  return (
+    <div
+      style={{
+        ...S.panel,
+        background: "linear-gradient(135deg,#1a0a3e,#0d1117)",
+        border: "1px solid #3d1f5f",
+      }}
+    >
+      <div
+        style={{
+          padding: "8px 16px",
+          borderRadius: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(168,85,247,0.15)",
+          border: "1px solid #5b21b6",
+          color: "#c084fc",
+          fontWeight: 800,
+          marginBottom: 12,
+        }}
+      >
+        🗳️ Fase Voting
+      </div>
+
+      <div style={S.sectionTitle}>
+        <span>⚔️</span> Kandidat
+      </div>
+
+      {/* Candidate cards with vote bars */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+        {candidates.map((cId) => {
+          const p = players.find((x) => x.id === cId);
+          if (!p) return null;
+          const info = ROLE_INFO[p.role];
+          const voteCount = tally[cId] ?? 0;
+          const pct = totalEligible > 0 ? (voteCount / totalEligible) * 100 : 0;
+          const isLeading = voteCount === maxVotes && voteCount > 0;
+          return (
+            <div
+              key={cId}
+              style={{
+                flex: 1,
+                background: isLeading
+                  ? "rgba(239,68,68,0.12)"
+                  : "rgba(255,255,255,0.04)",
+                border: `2px solid ${isLeading ? "#ef4444" : "#30363d"}`,
+                borderRadius: 14,
+                padding: 16,
+                textAlign: "center",
+                transition: "all 0.3s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "1.8rem",
+                  marginBottom: 4,
+                }}
+              >
+                {info.emoji}
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "1rem",
+                  color: "#e6edf3",
+                  marginBottom: 2,
+                }}
+              >
+                {p.name}
+              </div>
+              <div
+                style={{
+                  fontSize: "0.65rem",
+                  color: info.color,
+                  marginBottom: 10,
+                }}
+              >
+                {p.role}
+              </div>
+              <div
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: 900,
+                  color: isLeading ? "#f87171" : "#8b949e",
+                }}
+              >
+                {voteCount}
+              </div>
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#8b949e",
+                  marginBottom: 6,
+                }}
+              >
+                suara
+              </div>
+              <div
+                style={{
+                  height: 6,
+                  background: "#21262d",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pct}%`,
+                    background: isLeading
+                      ? "linear-gradient(90deg,#ef4444,#f87171)"
+                      : "linear-gradient(90deg,#6366f1,#818cf8)",
+                    borderRadius: 3,
+                    transition: "width 0.5s ease",
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Voter progress */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.04)",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            fontSize: "0.78rem",
+            color: "#8b949e",
+            marginBottom: 6,
+          }}
+        >
+          {totalVotes} / {totalEligible} pemain sudah voting
+        </div>
+        <div
+          style={{
+            height: 4,
+            background: "#30363d",
+            borderRadius: 2,
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${totalEligible > 0 ? (totalVotes / totalEligible) * 100 : 0}%`,
+              background:
+                totalVotes === totalEligible
+                  ? "#3fb950"
+                  : "linear-gradient(90deg,#a855f7,#c084fc)",
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Vote details */}
+      <div style={S.sectionTitle}>
+        <span>📋</span> Detail Suara
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 6,
+          marginBottom: 16,
+        }}
+      >
+        {eligibleVoters.map((p) => {
+          const v = votes.find((x) => x.voter_id === p.id);
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: "8px 10px",
+                background: v ? "rgba(168,85,247,0.1)" : "rgba(255,255,255,0.03)",
+                border: `1px solid ${v ? "#5b21b6" : "#21262d"}`,
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: v ? "#a855f7" : "#30363d",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  color: "#e6edf3",
+                  fontWeight: 600,
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.name}
+              </span>
+              {v ? (
+                <span
+                  style={{
+                    color: "#c084fc",
+                    fontWeight: 700,
+                    fontSize: "0.7rem",
+                  }}
+                >
+                  → {getPlayerName(v.target_id)}
+                </span>
+              ) : (
+                <span style={{ color: "#484f58", fontSize: "0.7rem" }}>
+                  Belum
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tie result */}
+      {tieResult && (
+        <div
+          style={{
+            background: "rgba(234,179,8,0.1)",
+            border: "1px solid #854d0e",
+            borderRadius: 10,
+            padding: 16,
+            marginBottom: 16,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "1.5rem", marginBottom: 6 }}>⚖️</div>
+          <p
+            style={{
+              color: "#fbbf24",
+              fontWeight: 700,
+              fontSize: "0.9rem",
+              margin: "0 0 12px",
+            }}
+          >
+            Voting Seri! Pilih siapa yang dieksekusi:
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            {tieResult.candidates.map((cId) => (
+              <button
+                key={cId}
+                onClick={() => setTiebreaker(cId)}
+                style={{
+                  padding: "10px 18px",
+                  background:
+                    tiebreaker === cId
+                      ? "rgba(239,68,68,0.2)"
+                      : "rgba(255,255,255,0.05)",
+                  border: `2px solid ${tiebreaker === cId ? "#ef4444" : "#30363d"}`,
+                  borderRadius: 8,
+                  color: tiebreaker === cId ? "#fca5a5" : "#e6edf3",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: "0.88rem",
+                }}
+              >
+                {getPlayerName(cId)} ({tieResult.tally[cId]} suara)
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={handleEndVoting}
+          disabled={totalVotes === 0}
+          style={{
+            ...S.btn(
+              totalVotes === totalEligible
+                ? "linear-gradient(135deg,#b91c1c,#dc2626)"
+                : "linear-gradient(135deg,#7c3aed,#a855f7)"
+            ),
+            flex: 2,
+            opacity: totalVotes === 0 ? 0.5 : 1,
+          }}
+        >
+          {totalVotes === totalEligible
+            ? "⚖️ Akhiri Voting & Eksekusi"
+            : `⚖️ Akhiri Voting (${totalVotes}/${totalEligible})`}
+        </button>
+        <button
+          onClick={handleCancelVoting}
+          style={{
+            ...S.btn("#21262d"),
+            flex: 1,
+            border: "1px solid #30363d",
+          }}
+        >
+          ✕ Batal
+        </button>
+      </div>
     </div>
   );
 }
@@ -984,7 +1585,15 @@ export default function ModeratorPage({
           />
         )}
         {game.phase === "day" && (
-          <DayPanel players={players} gameId={gameId} onRefresh={loadData} />
+          <DayPanel game={game} players={players} gameId={gameId} onRefresh={loadData} />
+        )}
+        {game.phase === "voting" && (
+          <VotingModeratorPanel
+            game={game}
+            players={players}
+            gameId={gameId}
+            onRefresh={loadData}
+          />
         )}
         {game.phase === "gameover" && (
           <div style={{ ...S.panel, textAlign: "center", padding: 32 }}>

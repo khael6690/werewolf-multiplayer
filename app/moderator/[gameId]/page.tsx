@@ -129,7 +129,7 @@ function PlayerGrid({
 }) {
   return (
     <div
-      style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}
+      style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}
     >
       {players.map((p) => {
         const info = ROLE_INFO[p.role];
@@ -274,7 +274,7 @@ function SetupPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(70px, 1fr))",
           gap: 8,
           marginBottom: 20,
         }}
@@ -645,7 +645,7 @@ function DayPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
               gap: 8,
             }}
           >
@@ -962,7 +962,7 @@ function VotingModeratorPanel({
       </div>
 
       {/* Candidate cards with vote bars */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
         {candidates.map((cId) => {
           const p = players.find((x) => x.id === cId);
           if (!p) return null;
@@ -975,6 +975,7 @@ function VotingModeratorPanel({
               key={cId}
               style={{
                 flex: 1,
+                minWidth: 140,
                 background: isLeading
                   ? "rgba(239,68,68,0.12)"
                   : "rgba(255,255,255,0.04)",
@@ -1103,7 +1104,7 @@ function VotingModeratorPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
           gap: 6,
           marginBottom: 16,
         }}
@@ -1317,7 +1318,7 @@ function DistributionPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
           gap: 8,
           marginBottom: 16,
         }}

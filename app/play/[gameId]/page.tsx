@@ -262,6 +262,418 @@ function CardPickScreen({
   );
 }
 
+// ── Voting Player Panel ──────────────────────────────────────
+function VotingPlayerPanel({
+  game,
+  players,
+}: {
+  game: Game;
+  players: PlayerPublic[];
+}) {
+  const supabase = createClient();
+  const myId =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem(`player_${game.id}`)
+      : null;
+  const candidates = (game.vote_candidates ?? []) as string[];
+  const alivePlayers = players.filter((p) => p.status === "alive");
+  const isCandidate = myId ? candidates.includes(myId) : false;
+  const me = players.find((p) => p.id === myId);
+  const isDead = me?.status === "dead";
+
+  const [votes, setVotes] = useState<
+    { voter_id: string; target_id: string }[]
+  >([]);
+  const [myVote, setMyVote] = useState<string | null>(null);
+  const [voting, setVoting] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadVotes = useCallback(async () => {
+    const { data } = await supabase
+      .from("votes")
+      .select("voter_id,target_id")
+      .eq("game_id", game.id)
+      .eq("round", game.vote_round);
+    if (data) {
+      setVotes(data);
+      if (myId) {
+        const myV = data.find((v: { voter_id: string }) => v.voter_id === myId);
+        if (myV) setMyVote(myV.target_id);
+      }
+    }
+  }, [game.id, game.vote_round, myId, supabase]);
+
+  useEffect(() => {
+    loadVotes();
+    const ch = supabase
+      .channel(`pvotes:${game.id}:${game.vote_round}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "votes",
+          filter: `game_id=eq.${game.id}`,
+        },
+        loadVotes
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [game.id, game.vote_round, loadVotes, supabase]);
+
+  async function castVote(targetId: string) {
+    if (!myId || myVote) return;
+    setVoting(true);
+    setError("");
+    try {
+      // Validate target is a candidate
+      if (!candidates.includes(targetId)) {
+        setError("Target bukan kandidat voting");
+        setVoting(false);
+        return;
+      }
+      // Insert vote directly via Supabase (RLS allows inserts)
+      const { error: insertError } = await supabase.from("votes").insert({
+        game_id: game.id,
+        round: game.vote_round,
+        voter_id: myId,
+        target_id: targetId,
+      });
+      if (insertError) {
+        if (insertError.code === "23505") {
+          setError("Sudah voting di ronde ini");
+        } else {
+          setError(insertError.message || "Gagal voting");
+        }
+      } else {
+        setMyVote(targetId);
+      }
+    } catch {
+      setError("Gagal mengirim vote");
+    }
+    setVoting(false);
+  }
+
+  const tally: Record<string, number> = {};
+  candidates.forEach((id) => (tally[id] = 0));
+  votes.forEach((v) => {
+    tally[v.target_id] = (tally[v.target_id] ?? 0) + 1;
+  });
+
+  const eligibleVoters = alivePlayers.filter(
+    (p) => !candidates.includes(p.id)
+  );
+  const totalVotes = votes.length;
+  const totalEligible = eligibleVoters.length;
+  const maxVotes = Math.max(...Object.values(tally), 0);
+
+  function getPlayerName(id: string) {
+    return players.find((p) => p.id === id)?.name ?? "Unknown";
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+      {/* Phase badge */}
+      <div
+        style={{
+          background: "rgba(168,85,247,0.15)",
+          border: "1px solid #5b21b6",
+          borderRadius: 10,
+          padding: "10px 16px",
+          textAlign: "center",
+          marginBottom: 16,
+        }}
+      >
+        <span style={{ fontWeight: 800, fontSize: "1rem", color: "#c084fc" }}>
+          🗳️ Fase Voting
+        </span>
+        <p
+          style={{
+            color: "#8b949e",
+            fontSize: "0.78rem",
+            margin: "4px 0 0",
+          }}
+        >
+          {isCandidate
+            ? "Kamu sedang dinominasikan! Menunggu hasil voting..."
+            : isDead
+              ? "Kamu sudah mati. Menonton voting..."
+              : myVote
+                ? "Kamu sudah voting! Menunggu pemain lain..."
+                : "Pilih salah satu kandidat untuk dieksekusi!"}
+        </p>
+      </div>
+
+      {/* Candidate cards */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        {candidates.map((cId) => {
+          const p = players.find((x) => x.id === cId);
+          if (!p) return null;
+          const voteCount = tally[cId] ?? 0;
+          const pct =
+            totalEligible > 0 ? (voteCount / totalEligible) * 100 : 0;
+          const isLeading = voteCount === maxVotes && voteCount > 0;
+          const isMyVoteTarget = myVote === cId;
+          const canVote =
+            !isCandidate && !isDead && !myVote && myId;
+          return (
+            <button
+              key={cId}
+              onClick={() => canVote && castVote(cId)}
+              disabled={!canVote || voting}
+              style={{
+                flex: 1,
+                background: isMyVoteTarget
+                  ? "rgba(168,85,247,0.15)"
+                  : isLeading
+                    ? "rgba(239,68,68,0.08)"
+                    : "#1c2330",
+                border: `2px solid ${
+                  isMyVoteTarget
+                    ? "#a855f7"
+                    : isLeading
+                      ? "#ef4444"
+                      : "#30363d"
+                }`,
+                borderRadius: 14,
+                padding: 16,
+                textAlign: "center",
+                cursor: canVote ? "pointer" : "default",
+                transition: "all 0.3s",
+                boxShadow: isMyVoteTarget
+                  ? "0 0 20px rgba(168,85,247,0.3)"
+                  : "none",
+              }}
+            >
+              <div style={{ fontSize: "1.5rem", marginBottom: 4 }}>
+                {p.id === myId ? "👤" : "❓"}
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.95rem",
+                  color: "#e6edf3",
+                  marginBottom: 6,
+                }}
+              >
+                {p.name}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.8rem",
+                  fontWeight: 900,
+                  color: isLeading ? "#f87171" : "#8b949e",
+                }}
+              >
+                {voteCount}
+              </div>
+              <div
+                style={{ fontSize: "0.7rem", color: "#8b949e", marginBottom: 6 }}
+              >
+                suara
+              </div>
+              <div
+                style={{
+                  height: 5,
+                  background: "#21262d",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pct}%`,
+                    background: isLeading
+                      ? "linear-gradient(90deg,#ef4444,#f87171)"
+                      : "linear-gradient(90deg,#6366f1,#818cf8)",
+                    borderRadius: 3,
+                    transition: "width 0.5s ease",
+                  }}
+                />
+              </div>
+              {isMyVoteTarget && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: "0.7rem",
+                    color: "#a855f7",
+                    fontWeight: 700,
+                  }}
+                >
+                  ✦ Pilihanmu
+                </div>
+              )}
+              {canVote && !voting && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: "0.7rem",
+                    color: "#58a6ff",
+                    fontWeight: 600,
+                  }}
+                >
+                  Tap untuk voting
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {error && (
+        <div
+          style={{
+            background: "rgba(220,50,50,0.1)",
+            border: "1px solid #5f1e1e",
+            borderRadius: 8,
+            padding: "8px 12px",
+            color: "#f87171",
+            fontSize: "0.82rem",
+            textAlign: "center",
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Vote progress */}
+      <div
+        style={{
+          background: "#1c2330",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{ fontSize: "0.78rem", color: "#8b949e", marginBottom: 6 }}
+        >
+          {totalVotes} / {totalEligible} pemain sudah voting
+        </div>
+        <div
+          style={{
+            height: 4,
+            background: "#30363d",
+            borderRadius: 2,
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${
+                totalEligible > 0 ? (totalVotes / totalEligible) * 100 : 0
+              }%`,
+              background:
+                totalVotes === totalEligible
+                  ? "#3fb950"
+                  : "linear-gradient(90deg,#a855f7,#c084fc)",
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Transparent vote list */}
+      <p
+        style={{
+          color: "#8b949e",
+          fontSize: "0.72rem",
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          marginBottom: 8,
+        }}
+      >
+        📋 Siapa Memilih Siapa
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: 4,
+          marginBottom: 16,
+        }}
+      >
+        {eligibleVoters.map((p) => {
+          const v = votes.find((x) => x.voter_id === p.id);
+          const isMe = p.id === myId;
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: "7px 10px",
+                background: isMe
+                  ? "rgba(240,192,64,0.08)"
+                  : v
+                    ? "rgba(168,85,247,0.06)"
+                    : "rgba(255,255,255,0.02)",
+                border: `1px solid ${
+                  isMe ? "#4a3a00" : v ? "#3b1c6b" : "#1c2330"
+                }`,
+                borderRadius: 6,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: v ? "#a855f7" : "#30363d",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  color: isMe ? "#f0c040" : "#e6edf3",
+                  fontWeight: isMe ? 700 : 600,
+                  flex: 1,
+                }}
+              >
+                {p.name}
+                {isMe && (
+                  <span style={{ fontSize: "0.65rem", marginLeft: 4 }}>
+                    (kamu)
+                  </span>
+                )}
+              </span>
+              {v ? (
+                <span
+                  style={{
+                    color: "#c084fc",
+                    fontWeight: 700,
+                    fontSize: "0.72rem",
+                  }}
+                >
+                  → {getPlayerName(v.target_id)}
+                </span>
+              ) : (
+                <span
+                  style={{
+                    color: "#484f58",
+                    fontSize: "0.7rem",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Menunggu...
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PlayerDashboard({
   players,
   game,
@@ -279,8 +691,15 @@ function PlayerDashboard({
     distribution: "🃏 Distribusi Peran",
     night: "🌙 Fase Malam",
     day: "☀️ Fase Siang",
+    voting: "🗳️ Fase Voting",
     gameover: "🏆 Game Over",
   };
+
+  // If voting phase, render the voting UI instead
+  if (game.phase === "voting") {
+    return <VotingPlayerPanel game={game} players={players} />;
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
       <div

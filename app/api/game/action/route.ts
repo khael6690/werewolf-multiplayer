@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const isPlayerAction = ["cast_vote", "ww_vote", "ww_confirm_kill"].includes(action);
+  const isPlayerAction = ["cast_vote", "ww_vote", "ww_confirm_kill", "dokter_heal", "peramal_see", "hunter_shoot"].includes(action);
 
   if (!session && !isPlayerAction)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -74,6 +74,67 @@ export async function POST(request: Request) {
       await admin
         .from("games")
         .update({ night_actions: { ...currentActions, killId: targetId } })
+        .eq("id", gameId);
+      break;
+    }
+    case "dokter_heal": {
+      // Dokter picks who to heal
+      const { playerId, targetId } = payload;
+      const { data: dokter } = await admin.from("players").select("*").eq("id", playerId).single();
+      if (!dokter || dokter.role !== "Dokter" || dokter.status !== "alive")
+        return NextResponse.json({ error: "Invalid dokter" }, { status: 400 });
+      if (game.night_step !== "dokter")
+        return NextResponse.json({ error: "Bukan giliran Dokter" }, { status: 400 });
+
+      const currentActions = (game.night_actions as any) || {};
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions, healId: targetId, dokterSubmitted: true } })
+        .eq("id", gameId);
+      break;
+    }
+    case "peramal_see": {
+      // Peramal picks who to see
+      const { playerId, targetId } = payload;
+      const { data: peramal } = await admin.from("players").select("*").eq("id", playerId).single();
+      if (!peramal || peramal.role !== "Peramal" || peramal.status !== "alive")
+        return NextResponse.json({ error: "Invalid peramal" }, { status: 400 });
+      if (game.night_step !== "peramal")
+        return NextResponse.json({ error: "Bukan giliran Peramal" }, { status: 400 });
+
+      // Look up the target's role
+      const { data: target } = await admin.from("players").select("role").eq("id", targetId).single();
+      if (!target)
+        return NextResponse.json({ error: "Target tidak ditemukan" }, { status: 400 });
+
+      const currentActions2 = (game.night_actions as any) || {};
+      await admin
+        .from("games")
+        .update({
+          night_actions: {
+            ...currentActions2,
+            seerTargetId: targetId,
+            seerResult: target.role === "Werewolf" ? "werewolf" : "bukan",
+            peramalSubmitted: true,
+          },
+        })
+        .eq("id", gameId);
+
+      return NextResponse.json({ ok: true, isWerewolf: target.role === "Werewolf" });
+    }
+    case "hunter_shoot": {
+      // Hunter picks revenge target
+      const { playerId, targetId } = payload;
+      const { data: hunter } = await admin.from("players").select("*").eq("id", playerId).single();
+      if (!hunter || hunter.role !== "Hunter")
+        return NextResponse.json({ error: "Invalid hunter" }, { status: 400 });
+      if (game.night_step !== "hunter_revenge")
+        return NextResponse.json({ error: "Bukan giliran Hunter" }, { status: 400 });
+
+      const currentActions3 = (game.night_actions as any) || {};
+      await admin
+        .from("games")
+        .update({ night_actions: { ...currentActions3, hunterKillId: targetId, hunterSubmitted: true } })
         .eq("id", gameId);
       break;
     }

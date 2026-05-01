@@ -675,6 +675,351 @@ function VotingPlayerPanel({
   );
 }
 
+// ── Dokter Night UI Component ────────────────────────────────
+function DokterNightUI({
+  gameId,
+  myId,
+  players,
+}: {
+  gameId: string;
+  myId: string;
+  players: PlayerPublic[];
+}) {
+  const [selId, setSelId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  async function handleHeal() {
+    if (!selId) return;
+    setLoading(true);
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "dokter_heal",
+        gameId,
+        payload: { playerId: myId, targetId: selId },
+      }),
+    });
+    setSubmitted(true);
+    setLoading(false);
+  }
+
+  if (submitted) {
+    return (
+      <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+        <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+          <h3 style={{ color: "#58a6ff", margin: "0 0 10px" }}>💉 Pilihan Dikunci</h3>
+          <p style={{ color: "#8b949e", fontSize: "0.85rem" }}>
+            Kamu telah memilih pemain untuk diselamatkan. Menunggu fase selanjutnya...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+      <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20 }}>
+        <h3 style={{ color: "#58a6ff", margin: "0 0 10px" }}>💉 Pilih Pemain untuk Diselamatkan</h3>
+        <p style={{ fontSize: "0.8rem", color: "#8b949e", marginBottom: 16 }}>
+          Pilih satu pemain yang ingin kamu selamatkan malam ini. Jika Werewolf menyerang pemain ini, mereka akan selamat.
+        </p>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {players.map(p => {
+            const isSel = selId === p.id;
+            const isMe = p.id === myId;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelId(p.id)}
+                style={{
+                  background: isSel ? "rgba(88,166,255,0.15)" : "#0d1117",
+                  border: `1px solid ${isSel ? "#58a6ff" : "#30363d"}`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s",
+                  boxShadow: isSel ? "0 0 12px rgba(88,166,255,0.2)" : "none",
+                }}
+              >
+                <span style={{ color: isSel ? "#93c5fd" : "#e6edf3", fontWeight: "bold" }}>
+                  {p.name} {isMe && <span style={{ fontSize: "0.7rem", color: "#58a6ff" }}>(kamu)</span>}
+                </span>
+                {isSel && (
+                  <span style={{ fontSize: "0.75rem", color: "#58a6ff", fontWeight: 700 }}>
+                    ✦ Dipilih
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {selId && (
+          <button
+            onClick={handleHeal}
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "10px 0",
+              background: "linear-gradient(135deg,#1d4ed8,#3b82f6)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginTop: 16,
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Mengirim..." : `💉 Selamatkan ${players.find(p => p.id === selId)?.name}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Peramal Night UI Component ───────────────────────────────
+function PeramalNightUI({
+  gameId,
+  myId,
+  players,
+}: {
+  gameId: string;
+  myId: string;
+  players: PlayerPublic[];
+}) {
+  const [selId, setSelId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ name: string; isWW: boolean } | null>(null);
+
+  async function handleSee() {
+    if (!selId) return;
+    setLoading(true);
+    const res = await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "peramal_see",
+        gameId,
+        payload: { playerId: myId, targetId: selId },
+      }),
+    });
+    const data = await res.json();
+    const targetName = players.find(p => p.id === selId)?.name ?? "???";
+    setResult({ name: targetName, isWW: data.isWerewolf });
+    setLoading(false);
+  }
+
+  if (result) {
+    return (
+      <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+        <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+          <h3 style={{ color: "#bc8cff", margin: "0 0 10px" }}>🔮 Hasil Ramalan</h3>
+          <div style={{
+            borderRadius: 10,
+            padding: 14,
+            fontWeight: 700,
+            marginBottom: 10,
+            background: result.isWW ? "rgba(220,50,50,0.2)" : "rgba(63,185,80,0.15)",
+            border: `1px solid ${result.isWW ? "#dc2626" : "#3fb950"}`,
+            color: result.isWW ? "#fca5a5" : "#86efac",
+            fontSize: "1.1rem",
+          }}>
+            {result.isWW ? `🐺 YA, WEREWOLF! — ${result.name}` : `✅ BUKAN WEREWOLF — ${result.name}`}
+          </div>
+          <p style={{ color: "#8b949e", fontSize: "0.82rem" }}>
+            ⚠️ Jangan tunjukkan layar ini! Menunggu moderator melanjutkan fase...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+      <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20 }}>
+        <h3 style={{ color: "#bc8cff", margin: "0 0 10px" }}>🔮 Pilih Pemain untuk Diintip</h3>
+        <p style={{ fontSize: "0.8rem", color: "#8b949e", marginBottom: 16 }}>
+          Pilih satu pemain untuk mengetahui apakah mereka Werewolf atau bukan.
+        </p>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {players.map(p => {
+            const isSel = selId === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelId(p.id)}
+                style={{
+                  background: isSel ? "rgba(188,140,255,0.15)" : "#0d1117",
+                  border: `1px solid ${isSel ? "#bc8cff" : "#30363d"}`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s",
+                  boxShadow: isSel ? "0 0 12px rgba(188,140,255,0.2)" : "none",
+                }}
+              >
+                <span style={{ color: isSel ? "#d8b4fe" : "#e6edf3", fontWeight: "bold" }}>
+                  {p.name}
+                </span>
+                {isSel && (
+                  <span style={{ fontSize: "0.75rem", color: "#bc8cff", fontWeight: 700 }}>
+                    ✦ Dipilih
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {selId && (
+          <button
+            onClick={handleSee}
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "10px 0",
+              background: "linear-gradient(135deg,#7c3aed,#a855f7)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginTop: 16,
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Mengintip..." : `🔮 Intip ${players.find(p => p.id === selId)?.name}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Hunter Night UI Component ────────────────────────────────
+function HunterNightUI({
+  gameId,
+  myId,
+  players,
+}: {
+  gameId: string;
+  myId: string;
+  players: PlayerPublic[];
+}) {
+  const [selId, setSelId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  async function handleShoot() {
+    if (!selId) return;
+    setLoading(true);
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "hunter_shoot",
+        gameId,
+        payload: { playerId: myId, targetId: selId },
+      }),
+    });
+    setSubmitted(true);
+    setLoading(false);
+  }
+
+  if (submitted) {
+    return (
+      <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+        <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+          <h3 style={{ color: "#fcd34d", margin: "0 0 10px" }}>🏹 Target Dikunci</h3>
+          <p style={{ color: "#8b949e", fontSize: "0.85rem" }}>
+            Kamu telah memilih target balas dendam. Menunggu moderator mengeksekusi...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+      <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20 }}>
+        <h3 style={{ color: "#fcd34d", margin: "0 0 10px" }}>🏹 Pembalasan Terakhir!</h3>
+        <p style={{ fontSize: "0.8rem", color: "#8b949e", marginBottom: 16 }}>
+          Kamu terbunuh! Tapi sebagai Hunter, kamu bisa membawa satu pemain bersamamu. Pilih target pembalasanmu!
+        </p>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {players.map(p => {
+            const isSel = selId === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelId(p.id)}
+                style={{
+                  background: isSel ? "rgba(252,211,77,0.15)" : "#0d1117",
+                  border: `1px solid ${isSel ? "#fcd34d" : "#30363d"}`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s",
+                  boxShadow: isSel ? "0 0 12px rgba(252,211,77,0.2)" : "none",
+                }}
+              >
+                <span style={{ color: isSel ? "#fde68a" : "#e6edf3", fontWeight: "bold" }}>
+                  {p.name}
+                </span>
+                {isSel && (
+                  <span style={{ fontSize: "0.75rem", color: "#fcd34d", fontWeight: 700 }}>
+                    ✦ Target
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {selId && (
+          <button
+            onClick={handleShoot}
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "10px 0",
+              background: "linear-gradient(135deg,#b45309,#d97706)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginTop: 16,
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Menembak..." : `🏹 Tembak ${players.find(p => p.id === selId)?.name}!`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PlayerDashboard({
   players,
   game,
@@ -824,6 +1169,91 @@ function PlayerDashboard({
         </div>
       );
     }
+  }
+
+  // ── Dokter Night UI ──────────────────────────────────────────
+  if (game.phase === "night" && game.night_step === "dokter" && myRole === "Dokter" && myId) {
+    const isMeDead = players.find(p => p.id === myId)?.status === "dead";
+    if (!isMeDead) {
+      const actions = game.night_actions as any;
+      const alreadySubmitted = actions?.dokterSubmitted;
+      const aliveTargets = players.filter(p => p.status === "alive");
+
+      if (alreadySubmitted) {
+        return (
+          <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+            <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+              <h3 style={{ color: "#58a6ff", margin: "0 0 10px" }}>💉 Pilihan Dikunci</h3>
+              <p style={{ color: "#8b949e", fontSize: "0.85rem" }}>
+                Kamu telah memilih pemain untuk diselamatkan. Menunggu fase selanjutnya...
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      return <DokterNightUI gameId={game.id} myId={myId} players={aliveTargets} />;
+    }
+  }
+
+  // ── Peramal Night UI ─────────────────────────────────────────
+  if (game.phase === "night" && game.night_step === "peramal" && myRole === "Peramal" && myId) {
+    const isMeDead = players.find(p => p.id === myId)?.status === "dead";
+    if (!isMeDead) {
+      const actions = game.night_actions as any;
+      const alreadySubmitted = actions?.peramalSubmitted;
+
+      if (alreadySubmitted) {
+        const targetName = players.find(p => p.id === actions?.seerTargetId)?.name ?? "???";
+        const isWW = actions?.seerResult === "werewolf";
+        return (
+          <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+            <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+              <h3 style={{ color: "#bc8cff", margin: "0 0 10px" }}>🔮 Hasil Ramalan</h3>
+              <div style={{
+                borderRadius: 10,
+                padding: 14,
+                fontWeight: 700,
+                marginBottom: 10,
+                background: isWW ? "rgba(220,50,50,0.2)" : "rgba(63,185,80,0.15)",
+                border: `1px solid ${isWW ? "#dc2626" : "#3fb950"}`,
+                color: isWW ? "#fca5a5" : "#86efac",
+              }}>
+                {isWW ? `🐺 YA, WEREWOLF! — ${targetName}` : `✅ BUKAN WEREWOLF — ${targetName}`}
+              </div>
+              <p style={{ color: "#8b949e", fontSize: "0.82rem" }}>
+                Menunggu moderator melanjutkan fase...
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      const aliveTargets = players.filter(p => p.status === "alive" && p.id !== myId);
+      return <PeramalNightUI gameId={game.id} myId={myId} players={aliveTargets} />;
+    }
+  }
+
+  // ── Hunter Revenge UI ────────────────────────────────────────
+  if (game.phase === "night" && game.night_step === "hunter_revenge" && myRole === "Hunter" && myId) {
+    const actions = game.night_actions as any;
+    const alreadySubmitted = actions?.hunterSubmitted;
+
+    if (alreadySubmitted) {
+      return (
+        <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+          <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 20, textAlign: "center" }}>
+            <h3 style={{ color: "#fcd34d", margin: "0 0 10px" }}>🏹 Target Dikunci</h3>
+            <p style={{ color: "#8b949e", fontSize: "0.85rem" }}>
+              Kamu telah memilih target balas dendam. Menunggu moderator mengeksekusi...
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    const aliveTargets = players.filter(p => p.status === "alive" && p.id !== myId);
+    return <HunterNightUI gameId={game.id} myId={myId} players={aliveTargets} />;
   }
 
   return (

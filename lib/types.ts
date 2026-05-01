@@ -16,7 +16,17 @@ export interface Game {
   phase: Phase;
   night_round: number;
   night_step: NightStep | null;
-  night_actions: { killId?: string; healId?: string; hunterKillId?: string };
+  night_actions: {
+    killId?: string;
+    healId?: string;
+    hunterKillId?: string;
+    wwVotes?: Record<string, string>;
+    dokterSubmitted?: boolean;
+    seerTargetId?: string;
+    seerResult?: string;
+    peramalSubmitted?: boolean;
+    hunterSubmitted?: boolean;
+  };
   winner: "warga" | "werewolf" | null;
   vote_candidates: string[];
   vote_round: number;

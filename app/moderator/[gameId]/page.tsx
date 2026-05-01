@@ -395,12 +395,14 @@ function NightPanel({
       title: "💉 Giliran Dokter",
       accent: "#58a6ff",
       narasi:
-        '"Werewolf, tutup mata. Dokter, buka mata." Dokter menunjuk siapa yang ingin diselamatkan malam ini.',
+        '"Werewolf, tutup mata. Dokter, buka mata." Dokter sedang memilih pemain yang ingin diselamatkan via perangkatnya.',
       btnLabel: "Selesai, Lanjut ke Peramal ➔",
       nextAction: () => {
+        const actions = game.night_actions as any;
+        const healTarget = actions?.dokterSubmitted ? actions.healId : selId;
         callAction("night_step", {
           step: "peramal",
-          actions: { ...game.night_actions, healId: selId },
+          actions: { ...game.night_actions, healId: healTarget },
         });
         setSelId(null);
         setSeerResult(null);
@@ -411,7 +413,7 @@ function NightPanel({
       title: "🔮 Giliran Peramal",
       accent: "#bc8cff",
       narasi:
-        '"Dokter, tutup mata. Peramal, buka mata." Peramal menunjuk satu pemain. Hasil hanya terlihat moderator.',
+        '"Dokter, tutup mata. Peramal, buka mata." Peramal sedang memilih pemain untuk diintip via perangkatnya.',
       btnLabel: "Semua Tidur, Proses Malam ➔",
       nextAction: () => {
         callAction("process_night", {
@@ -425,10 +427,12 @@ function NightPanel({
       title: "🏹 Pembalasan Hunter",
       accent: "#fcd34d",
       narasi:
-        'Hunter terbunuh! Bisikkan ke Hunter: "Kamu bisa membawa satu orang bersamamu." Hunter menunjuk targetnya.',
+        'Hunter terbunuh! Hunter sedang memilih target pembalasan via perangkatnya.',
       btnLabel: "🏹 Eksekusi Peluru Hunter ➔",
       nextAction: () => {
-        callAction("hunter_revenge", { hunterKillId: selId });
+        const actions = game.night_actions as any;
+        const hunterTarget = actions?.hunterSubmitted ? actions.hunterKillId : selId;
+        callAction("hunter_revenge", { hunterKillId: hunterTarget });
         setSelId(null);
       },
       filter: () => true,
@@ -512,11 +516,72 @@ function NightPanel({
         </div>
       )}
 
+      {step === "dokter" && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(88,166,255,0.1)", border: "1px solid #58a6ff", textAlign: "center" }}>
+          <h4 style={{ margin: "0 0 8px", color: "#93c5fd" }}>Status Pilihan Dokter:</h4>
+          {(game.night_actions as any)?.dokterSubmitted ? (
+            <p style={{ margin: 0, fontWeight: "bold", color: "#58a6ff" }}>
+              ✅ Dokter memilih menyelamatkan: <strong>{players.find(p => p.id === (game.night_actions as any)?.healId)?.name}</strong>
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
+              ⏳ Menunggu Dokter memilih pemain...
+            </p>
+          )}
+        </div>
+      )}
+
+      {step === "peramal" && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(188,140,255,0.1)", border: "1px solid #bc8cff", textAlign: "center" }}>
+          <h4 style={{ margin: "0 0 8px", color: "#d8b4fe" }}>Status Pilihan Peramal:</h4>
+          {(game.night_actions as any)?.peramalSubmitted ? (
+            <>
+              <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#bc8cff" }}>
+                ✅ Peramal mengintip: <strong>{players.find(p => p.id === (game.night_actions as any)?.seerTargetId)?.name}</strong>
+              </p>
+              <p style={{
+                margin: 0,
+                fontWeight: "bold",
+                color: (game.night_actions as any)?.seerResult === "werewolf" ? "#fca5a5" : "#86efac",
+              }}>
+                {(game.night_actions as any)?.seerResult === "werewolf"
+                  ? "🐺 WEREWOLF!"
+                  : "✅ BUKAN WEREWOLF"}
+              </p>
+            </>
+          ) : (
+            <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
+              ⏳ Menunggu Peramal memilih target...
+            </p>
+          )}
+        </div>
+      )}
+
+      {step === "hunter_revenge" && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(252,211,77,0.1)", border: "1px solid #fcd34d", textAlign: "center" }}>
+          <h4 style={{ margin: "0 0 8px", color: "#fde68a" }}>Status Pilihan Hunter:</h4>
+          {(game.night_actions as any)?.hunterSubmitted ? (
+            <p style={{ margin: 0, fontWeight: "bold", color: "#fcd34d" }}>
+              ✅ Hunter memilih menembak: <strong>{players.find(p => p.id === (game.night_actions as any)?.hunterKillId)?.name}</strong>
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
+              ⏳ Menunggu Hunter memilih target balas dendam...
+            </p>
+          )}
+        </div>
+      )}
+
       <PlayerGrid
         players={
           step === "werewolf" ? alivePlayers.filter(cfg.filter) : alivePlayers
         }
-        selectedId={selId || (step === "werewolf" && !selId ? game.night_actions?.killId || null : null)}
+        selectedId={
+          step === "werewolf" ? (selId || game.night_actions?.killId || null)
+          : step === "dokter" ? (selId || (game.night_actions as any)?.healId || null)
+          : step === "hunter_revenge" ? (selId || (game.night_actions as any)?.hunterKillId || null)
+          : selId
+        }
         onSelect={step === "peramal" ? checkSeer : setSelId}
         showRoles
       />

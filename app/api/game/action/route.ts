@@ -162,6 +162,23 @@ export async function POST(request: Request) {
           .eq("id", gameId);
         return NextResponse.json({ phase: "hunter_revenge", killed });
       }
+
+      const { data: pnPlayers } = await admin
+        .from("players")
+        .select("*")
+        .eq("game_id", gameId);
+      const pnWinner = checkWin(pnPlayers ?? []);
+      if (pnWinner) {
+        await admin
+          .from("games")
+          .update({ phase: "gameover", winner: pnWinner, night_step: null })
+          .eq("id", gameId);
+        await admin
+          .from("game_events")
+          .insert({ game_id: gameId, type: "game_over", payload: { winner: pnWinner } });
+        return NextResponse.json({ phase: "gameover", killed, winner: pnWinner });
+      }
+
       await admin
         .from("games")
         .update({ phase: "day", night_step: null })
@@ -169,15 +186,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ phase: "day", killed });
     }
     case "hunter_revenge": {
-      if (payload.hunterKillId)
+      if (payload.hunterKillId) {
         await admin
           .from("players")
           .update({ status: "dead" })
           .eq("id", payload.hunterKillId);
-      await admin
-        .from("games")
-        .update({ phase: "day", night_step: null })
-        .eq("id", gameId);
+      }
+      
+      const { data: hrPlayers } = await admin
+        .from("players")
+        .select("*")
+        .eq("game_id", gameId);
+      const hrWinner = checkWin(hrPlayers ?? []);
+      
+      if (hrWinner) {
+        await admin
+          .from("games")
+          .update({ phase: "gameover", winner: hrWinner, night_step: null })
+          .eq("id", gameId);
+        await admin
+          .from("game_events")
+          .insert({ game_id: gameId, type: "game_over", payload: { winner: hrWinner } });
+      } else {
+        await admin
+          .from("games")
+          .update({ phase: "day", night_step: null })
+          .eq("id", gameId);
+      }
       break;
     }
     // ── Moderator starts a vote by nominating 2 candidates ────

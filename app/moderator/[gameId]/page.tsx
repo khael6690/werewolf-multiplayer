@@ -2192,7 +2192,16 @@ export default function ModeratorPage({
                 ))}
             </div>
             <button
-              onClick={() => {
+              onClick={async () => {
+                await fetch("/api/game/action", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "reset_game",
+                    gameId: game.id,
+                    payload: {},
+                  }),
+                });
                 window.location.href = "/moderator/new";
               }}
               style={{

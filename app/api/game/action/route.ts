@@ -488,6 +488,12 @@ export async function POST(request: Request) {
       }
       break;
     }
+    // ── Moderator resets game (deletes all data) ─────────────
+    case "reset_game": {
+      // Cascade delete: players, cards, votes, game_events all removed automatically
+      await admin.from("games").delete().eq("id", gameId);
+      break;
+    }
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }

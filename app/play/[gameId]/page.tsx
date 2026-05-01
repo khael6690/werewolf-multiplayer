@@ -1953,6 +1953,7 @@ export default function PlayPage({
   const [hasPicked, setHasPicked] = useState(false);
   const [myRole, setMyRole] = useState<Role | null>(null);
   const [wwList, setWwList] = useState<string[]>([]);
+  const [gameDeleted, setGameDeleted] = useState(false);
 
   const loadData = useCallback(async () => {
     const [{ data: g }, { data: c }, { data: p }] = await Promise.all([
@@ -1968,7 +1969,13 @@ export default function PlayPage({
         .eq("game_id", gameId)
         .order("slot"),
     ]);
-    if (g) setGame(g as Game);
+    if (g) {
+      setGame(g as Game);
+    } else {
+      // Game was deleted — moderator clicked 'Main Lagi'
+      setGameDeleted(true);
+      return;
+    }
     if (p) setPlayers(p as PlayerPublic[]);
     if (c) {
       const pMap = Object.fromEntries(
@@ -2036,6 +2043,14 @@ export default function PlayPage({
     };
   }, [gameId, loadData, supabase]);
 
+  // Redirect to home when game is deleted by moderator
+  useEffect(() => {
+    if (gameDeleted) {
+      sessionStorage.removeItem(`player_${gameId}`);
+      window.location.href = "/";
+    }
+  }, [gameDeleted, gameId]);
+
   if (!game)
     return (
       <div
@@ -2047,7 +2062,9 @@ export default function PlayPage({
           background: "#0d0f14",
         }}
       >
-        <p style={{ color: "#8b949e" }}>Memuat game...</p>
+        <p style={{ color: "#8b949e" }}>
+          {gameDeleted ? "Game selesai! Mengalihkan..." : "Memuat game..."}
+        </p>
       </div>
     );
 

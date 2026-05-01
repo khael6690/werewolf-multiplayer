@@ -675,6 +675,488 @@ function VotingPlayerPanel({
   );
 }
 
+// ── Voting Global Player Panel (Among Us style) ──────────────
+function VotingGlobalPlayerPanel({
+  game,
+  players,
+}: {
+  game: Game;
+  players: PlayerPublic[];
+}) {
+  const supabase = createClient();
+  const myId =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem(`player_${game.id}`)
+      : null;
+  const alivePlayers = players.filter((p) => p.status === "alive");
+  const me = players.find((p) => p.id === myId);
+  const isDead = me?.status === "dead";
+
+  const [votes, setVotes] = useState<
+    { voter_id: string; target_id: string }[]
+  >([]);
+  const [myVote, setMyVote] = useState<string | null>(null);
+  const [voting, setVoting] = useState(false);
+  const [error, setError] = useState("");
+
+  const totalVoters = alivePlayers.length;
+  const threshold = Math.floor(totalVoters / 2) + 1;
+
+  const loadVotes = useCallback(async () => {
+    const { data } = await supabase
+      .from("votes")
+      .select("voter_id,target_id")
+      .eq("game_id", game.id)
+      .eq("round", game.vote_round);
+    if (data) {
+      setVotes(data);
+      if (myId) {
+        const myV = data.find((v: { voter_id: string }) => v.voter_id === myId);
+        if (myV) setMyVote(myV.target_id);
+      }
+    }
+  }, [game.id, game.vote_round, myId, supabase]);
+
+  useEffect(() => {
+    loadVotes();
+    const ch = supabase
+      .channel(`gpvotes:${game.id}:${game.vote_round}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "votes",
+          filter: `game_id=eq.${game.id}`,
+        },
+        loadVotes
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [game.id, game.vote_round, loadVotes, supabase]);
+
+  async function castVote(targetId: string) {
+    if (!myId || myVote) return;
+    setVoting(true);
+    setError("");
+    try {
+      const { error: insertError } = await supabase.from("votes").insert({
+        game_id: game.id,
+        round: game.vote_round,
+        voter_id: myId,
+        target_id: targetId,
+      });
+      if (insertError) {
+        if (insertError.code === "23505") {
+          setError("Sudah voting di ronde ini");
+        } else {
+          setError(insertError.message || "Gagal voting");
+        }
+      } else {
+        setMyVote(targetId);
+      }
+    } catch {
+      setError("Gagal mengirim vote");
+    }
+    setVoting(false);
+  }
+
+  function handleSkip() {
+    if (myId) castVote(myId); // Self-vote = skip
+  }
+
+  // Count votes, separating skips
+  const tally: Record<string, number> = {};
+  let skipCount = 0;
+  alivePlayers.forEach((p) => (tally[p.id] = 0));
+  votes.forEach((v) => {
+    if (v.voter_id === v.target_id) {
+      skipCount++;
+    } else {
+      tally[v.target_id] = (tally[v.target_id] ?? 0) + 1;
+    }
+  });
+
+  const totalVoted = votes.length;
+  const maxVotes = Math.max(...Object.values(tally), 0);
+  const canVote = !isDead && !myVote && myId;
+  const myVoteIsSkip = myVote && myVote === myId;
+
+  // Sort players by vote count
+  const votableTargets = alivePlayers
+    .filter((p) => p.id !== myId)
+    .sort((a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0));
+
+  function getPlayerName(id: string) {
+    return players.find((p) => p.id === id)?.name ?? "Unknown";
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 500, margin: "0 auto" }}>
+      {/* Phase badge */}
+      <div
+        style={{
+          background: "rgba(20,184,166,0.15)",
+          border: "1px solid #0d9488",
+          borderRadius: 10,
+          padding: "10px 16px",
+          textAlign: "center",
+          marginBottom: 16,
+        }}
+      >
+        <span style={{ fontWeight: 800, fontSize: "1rem", color: "#5eead4" }}>
+          🌐 Voting Semua
+        </span>
+        <p
+          style={{
+            color: "#8b949e",
+            fontSize: "0.78rem",
+            margin: "4px 0 0",
+          }}
+        >
+          {isDead
+            ? "Kamu sudah mati. Menonton voting..."
+            : myVoteIsSkip
+              ? "Kamu memilih skip. Menunggu pemain lain..."
+              : myVote
+                ? `Kamu sudah voting! Menunggu pemain lain...`
+                : "Pilih pemain untuk dieliminasi, atau skip!"}
+        </p>
+      </div>
+
+      {/* Vote targets */}
+      <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+        {votableTargets.map((p) => {
+          const voteCount = tally[p.id] ?? 0;
+          const pct = totalVoters > 0 ? (voteCount / totalVoters) * 100 : 0;
+          const isLeading = voteCount === maxVotes && voteCount > 0;
+          const meetsThreshold = voteCount >= threshold;
+          const isMyVoteTarget = myVote === p.id;
+          return (
+            <button
+              key={p.id}
+              onClick={() => canVote && castVote(p.id)}
+              disabled={!canVote || voting}
+              style={{
+                background: isMyVoteTarget
+                  ? "rgba(20,184,166,0.15)"
+                  : meetsThreshold
+                    ? "rgba(239,68,68,0.08)"
+                    : "#1c2330",
+                border: `2px solid ${
+                  isMyVoteTarget
+                    ? "#14b8a6"
+                    : meetsThreshold
+                      ? "#ef4444"
+                      : isLeading
+                        ? "#0d9488"
+                        : "#30363d"
+                }`,
+                borderRadius: 12,
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                cursor: canVote ? "pointer" : "default",
+                transition: "all 0.3s",
+                boxShadow: isMyVoteTarget
+                  ? "0 0 16px rgba(20,184,166,0.25)"
+                  : "none",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.95rem",
+                  color: "#e6edf3",
+                  flex: 1,
+                }}
+              >
+                {p.name}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "1.2rem",
+                    fontWeight: 900,
+                    color: meetsThreshold
+                      ? "#f87171"
+                      : isLeading
+                        ? "#5eead4"
+                        : "#8b949e",
+                    minWidth: 24,
+                    textAlign: "center",
+                  }}
+                >
+                  {voteCount}
+                </div>
+                <div
+                  style={{
+                    width: 50,
+                    height: 5,
+                    background: "#21262d",
+                    borderRadius: 3,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${pct}%`,
+                      background: meetsThreshold
+                        ? "linear-gradient(90deg,#ef4444,#f87171)"
+                        : "linear-gradient(90deg,#0d9488,#14b8a6)",
+                      borderRadius: 3,
+                      transition: "width 0.5s ease",
+                    }}
+                  />
+                </div>
+              </div>
+              {isMyVoteTarget && (
+                <span
+                  style={{
+                    fontSize: "0.7rem",
+                    color: "#14b8a6",
+                    fontWeight: 700,
+                  }}
+                >
+                  ✦
+                </span>
+              )}
+              {canVote && !voting && (
+                <span
+                  style={{
+                    fontSize: "0.65rem",
+                    color: "#58a6ff",
+                    fontWeight: 600,
+                  }}
+                >
+                  Tap
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Skip button */}
+      {canVote && (
+        <button
+          onClick={handleSkip}
+          disabled={voting}
+          style={{
+            width: "100%",
+            padding: "10px 0",
+            background: "#21262d",
+            color: "#8b949e",
+            border: "1px solid #30363d",
+            borderRadius: 10,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontSize: "0.88rem",
+            marginBottom: 12,
+            opacity: voting ? 0.5 : 1,
+          }}
+        >
+          ⏭️ Skip Voting
+        </button>
+      )}
+
+      {myVoteIsSkip && (
+        <div
+          style={{
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid #30363d",
+            borderRadius: 8,
+            padding: "8px 14px",
+            textAlign: "center",
+            color: "#8b949e",
+            fontSize: "0.82rem",
+            marginBottom: 12,
+          }}
+        >
+          ⏭️ Kamu memilih <strong>Skip</strong>
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "rgba(220,50,50,0.1)",
+            border: "1px solid #5f1e1e",
+            borderRadius: 8,
+            padding: "8px 12px",
+            color: "#f87171",
+            fontSize: "0.82rem",
+            textAlign: "center",
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Vote progress */}
+      <div
+        style={{
+          background: "#1c2330",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{ fontSize: "0.78rem", color: "#8b949e", marginBottom: 4 }}
+        >
+          {totalVoted} / {totalVoters} sudah voting • {skipCount} skip
+        </div>
+        <div style={{ fontSize: "0.68rem", color: "#5eead4", marginBottom: 6 }}>
+          Butuh {threshold} suara untuk eliminasi
+        </div>
+        <div
+          style={{
+            height: 4,
+            background: "#30363d",
+            borderRadius: 2,
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${
+                totalVoters > 0 ? (totalVoted / totalVoters) * 100 : 0
+              }%`,
+              background:
+                totalVoted === totalVoters
+                  ? "#3fb950"
+                  : "linear-gradient(90deg,#0d9488,#14b8a6)",
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Transparent vote list */}
+      <p
+        style={{
+          color: "#8b949e",
+          fontSize: "0.72rem",
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          marginBottom: 8,
+        }}
+      >
+        📋 Status Pemilih
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: 4,
+          marginBottom: 16,
+        }}
+      >
+        {alivePlayers.map((p) => {
+          const v = votes.find((x) => x.voter_id === p.id);
+          const isMe = p.id === myId;
+          const isSkip = v && v.voter_id === v.target_id;
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: "7px 10px",
+                background: isMe
+                  ? "rgba(240,192,64,0.08)"
+                  : v
+                    ? isSkip
+                      ? "rgba(255,255,255,0.03)"
+                      : "rgba(20,184,166,0.06)"
+                    : "rgba(255,255,255,0.02)",
+                border: `1px solid ${
+                  isMe ? "#4a3a00" : v ? (isSkip ? "#30363d" : "#0d9488") : "#1c2330"
+                }`,
+                borderRadius: 6,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: v ? (isSkip ? "#8b949e" : "#14b8a6") : "#30363d",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  color: isMe ? "#f0c040" : "#e6edf3",
+                  fontWeight: isMe ? 700 : 600,
+                  flex: 1,
+                }}
+              >
+                {p.name}
+                {isMe && (
+                  <span style={{ fontSize: "0.65rem", marginLeft: 4 }}>
+                    (kamu)
+                  </span>
+                )}
+              </span>
+              {v ? (
+                isSkip ? (
+                  <span
+                    style={{
+                      color: "#8b949e",
+                      fontSize: "0.7rem",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Skip
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      color: "#5eead4",
+                      fontWeight: 700,
+                      fontSize: "0.72rem",
+                    }}
+                  >
+                    → {getPlayerName(v.target_id)}
+                  </span>
+                )
+              ) : (
+                <span
+                  style={{
+                    color: "#484f58",
+                    fontSize: "0.7rem",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Menunggu...
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Dokter Night UI Component ────────────────────────────────
 function DokterNightUI({
   gameId,
@@ -1047,6 +1529,10 @@ function PlayerDashboard({
 
   // If voting phase, render the voting UI instead
   if (game.phase === "voting") {
+    const isGlobal = ((game.vote_candidates ?? []) as string[]).includes("__global__");
+    if (isGlobal) {
+      return <VotingGlobalPlayerPanel game={game} players={players} />;
+    }
     return <VotingPlayerPanel game={game} players={players} />;
   }
 

@@ -196,7 +196,7 @@ export async function POST(request: Request) {
         .eq("id", gameId);
       break;
     }
-    // ── Player casts a vote for one of the 2 candidates ──────
+    // ── Player casts a vote ────────────────────────────────────
     case "cast_vote": {
       const { voterId, targetId } = payload;
       if (!voterId || !targetId)
@@ -206,10 +206,8 @@ export async function POST(request: Request) {
       if (game.phase !== "voting")
         return NextResponse.json({ error: "Bukan fase voting" }, { status: 400 });
 
-      // Validate target is one of the candidates
       const candidates = game.vote_candidates ?? [];
-      if (!candidates.includes(targetId))
-        return NextResponse.json({ error: "Target bukan kandidat voting" }, { status: 400 });
+      const isGlobalVoting = candidates.length === 1 && candidates[0] === "__global__";
 
       // Validate voter is alive
       const { data: voter } = await admin
@@ -220,9 +218,23 @@ export async function POST(request: Request) {
       if (!voter || voter.status !== "alive")
         return NextResponse.json({ error: "Pemain tidak valid atau sudah mati" }, { status: 400 });
 
-      // Voter cannot be a candidate
-      if (candidates.includes(voterId))
-        return NextResponse.json({ error: "Kandidat tidak boleh memilih" }, { status: 400 });
+      if (isGlobalVoting) {
+        // Global voting: target must be an alive player (self-vote = skip)
+        const { data: target } = await admin
+          .from("players")
+          .select("status")
+          .eq("id", targetId)
+          .single();
+        if (!target || target.status !== "alive")
+          return NextResponse.json({ error: "Target tidak valid" }, { status: 400 });
+      } else {
+        // VS voting: target must be one of the 2 candidates
+        if (!candidates.includes(targetId))
+          return NextResponse.json({ error: "Target bukan kandidat voting" }, { status: 400 });
+        // Voter cannot be a candidate in VS mode
+        if (candidates.includes(voterId))
+          return NextResponse.json({ error: "Kandidat tidak boleh memilih" }, { status: 400 });
+      }
 
       // Check if already voted this round
       const { data: existing } = await admin
@@ -327,6 +339,118 @@ export async function POST(request: Request) {
           .eq("id", gameId);
       }
       return NextResponse.json({ ok: true, executed: vp, tally });
+    }
+    // ── Moderator starts a global vote (all alive players) ────
+    case "start_voting_global": {
+      const newRound = (game.vote_round ?? 0) + 1;
+      await admin
+        .from("games")
+        .update({
+          phase: "voting",
+          vote_candidates: ["__global__"],
+          vote_round: newRound,
+        })
+        .eq("id", gameId);
+      break;
+    }
+    // ── Moderator ends global voting ─────────────────────────
+    case "end_voting_global": {
+      const gRound = game.vote_round;
+      const gCandidates = game.vote_candidates ?? [];
+      if (gCandidates.length !== 1 || gCandidates[0] !== "__global__")
+        return NextResponse.json({ error: "Bukan mode voting global" }, { status: 400 });
+
+      const { data: gAllPlayers } = await admin
+        .from("players")
+        .select("*")
+        .eq("game_id", gameId);
+      const gAlivePlayers = (gAllPlayers ?? []).filter((p: any) => p.status === "alive");
+      const totalVoters = gAlivePlayers.length;
+
+      const { data: gVotes } = await admin
+        .from("votes")
+        .select("voter_id,target_id")
+        .eq("game_id", gameId)
+        .eq("round", gRound);
+
+      // Count votes, excluding self-votes (skip)
+      const gTally: Record<string, number> = {};
+      let skipCount = 0;
+      (gVotes ?? []).forEach((v: { voter_id: string; target_id: string }) => {
+        if (v.voter_id === v.target_id) {
+          skipCount++;
+        } else {
+          gTally[v.target_id] = (gTally[v.target_id] ?? 0) + 1;
+        }
+      });
+
+      // Find player with > 50% of total voters (strict majority)
+      const threshold = Math.floor(totalVoters / 2) + 1;
+      let gExecutedId: string | null = null;
+      for (const [playerId, count] of Object.entries(gTally)) {
+        if (count >= threshold) {
+          gExecutedId = playerId;
+          break;
+        }
+      }
+
+      if (!gExecutedId) {
+        // No elimination
+        await admin
+          .from("games")
+          .update({ phase: "day", vote_candidates: [] })
+          .eq("id", gameId);
+        await admin.from("game_events").insert({
+          game_id: gameId,
+          type: "vote_no_elimination",
+          payload: { tally: gTally, skipCount, threshold },
+        });
+        return NextResponse.json({ ok: true, noElimination: true, tally: gTally, skipCount, threshold });
+      }
+
+      // Execute the player
+      await admin.from("players").update({ status: "dead" }).eq("id", gExecutedId);
+      const { data: gVp } = await admin
+        .from("players")
+        .select("*")
+        .eq("id", gExecutedId)
+        .single();
+      await admin.from("game_events").insert({
+        game_id: gameId,
+        type: "day_execute",
+        payload: { playerId: gExecutedId, name: gVp?.name, role: gVp?.role, byGlobalVoting: true, tally: gTally, skipCount },
+      });
+
+      // Handle Hunter revenge
+      if (gVp?.role === "Hunter") {
+        await admin
+          .from("games")
+          .update({ phase: "night", night_step: "hunter_revenge", vote_candidates: [] })
+          .eq("id", gameId);
+        return NextResponse.json({ phase: "hunter_revenge", executed: gVp, tally: gTally });
+      }
+
+      // Check win condition
+      const { data: gPlayersAfter } = await admin
+        .from("players")
+        .select("*")
+        .eq("game_id", gameId);
+      const gWinner = checkWin(gPlayersAfter ?? []);
+      if (gWinner) {
+        await admin
+          .from("games")
+          .update({ phase: "gameover", winner: gWinner, vote_candidates: [] })
+          .eq("id", gameId);
+        await admin
+          .from("game_events")
+          .insert({ game_id: gameId, type: "game_over", payload: { winner: gWinner } });
+      } else {
+        await admin
+          .from("games")
+          .update({ phase: "day", vote_candidates: [] })
+          .eq("id", gameId);
+      }
+      return NextResponse.json({ ok: true, executed: gVp, tally: gTally, skipCount });
     }
     case "execute_vote": {
       const { playerId } = payload;

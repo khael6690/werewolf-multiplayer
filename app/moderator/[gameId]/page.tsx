@@ -656,6 +656,19 @@ function DayPanel({
     onRefresh();
   }
 
+  async function doStartVotingGlobal() {
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "start_voting_global",
+        gameId,
+        payload: {},
+      }),
+    });
+    onRefresh();
+  }
+
   async function startNight() {
     await fetch("/api/game/action", {
       method: "POST",
@@ -730,25 +743,31 @@ function DayPanel({
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
             <button
               onClick={() => setMode("voting")}
               style={{
                 ...S.btn("linear-gradient(135deg,#7c3aed,#a855f7)"),
-                flex: 1,
               }}
             >
-              🗳️ Mulai Voting
+              🗳️ Voting VS
+            </button>
+            <button
+              onClick={doStartVotingGlobal}
+              style={{
+                ...S.btn("linear-gradient(135deg,#0d9488,#14b8a6)"),
+              }}
+            >
+              🌐 Voting Semua
             </button>
             <button
               onClick={() => setMode("direct")}
               style={{
                 ...S.btn("#21262d"),
-                flex: 1,
                 border: "1px solid #30363d",
               }}
             >
-              ⚖️ Eksekusi Langsung
+              ⚖️ Eksekusi
             </button>
           </div>
         </>
@@ -1370,6 +1389,411 @@ function VotingModeratorPanel({
   );
 }
 
+// ── Voting Global Moderator Panel ────────────────────────────
+function VotingGlobalModeratorPanel({
+  game,
+  players,
+  gameId,
+  onRefresh,
+}: {
+  game: Game;
+  players: Player[];
+  gameId: string;
+  onRefresh: () => void;
+}) {
+  const supabase = createClient();
+  const [votes, setVotes] = useState<
+    { voter_id: string; target_id: string }[]
+  >([]);
+  const [resultMsg, setResultMsg] = useState<string | null>(null);
+
+  const alivePlayers = players.filter((p) => p.status === "alive");
+  const totalVoters = alivePlayers.length;
+  const threshold = Math.floor(totalVoters / 2) + 1;
+
+  const loadVotes = useCallback(async () => {
+    const { data } = await supabase
+      .from("votes")
+      .select("voter_id,target_id")
+      .eq("game_id", gameId)
+      .eq("round", game.vote_round);
+    if (data) setVotes(data);
+  }, [gameId, game.vote_round, supabase]);
+
+  useEffect(() => {
+    loadVotes();
+    const ch = supabase
+      .channel(`gvotes:${gameId}:${game.vote_round}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "votes",
+          filter: `game_id=eq.${gameId}`,
+        },
+        loadVotes
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [gameId, game.vote_round, loadVotes, supabase]);
+
+  // Count votes, separating skips (self-vote)
+  const tally: Record<string, number> = {};
+  let skipCount = 0;
+  alivePlayers.forEach((p) => (tally[p.id] = 0));
+  votes.forEach((v) => {
+    if (v.voter_id === v.target_id) {
+      skipCount++;
+    } else {
+      tally[v.target_id] = (tally[v.target_id] ?? 0) + 1;
+    }
+  });
+
+  const totalVoted = votes.length;
+  const maxVotes = Math.max(...Object.values(tally), 0);
+
+  // Sort players by vote count (desc)
+  const sortedPlayers = [...alivePlayers].sort(
+    (a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0)
+  );
+
+  function getPlayerName(id: string) {
+    return players.find((p) => p.id === id)?.name ?? "Unknown";
+  }
+
+  async function handleEndVoting() {
+    const res = await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "end_voting_global",
+        gameId,
+        payload: {},
+      }),
+    });
+    const data = await res.json();
+    if (data.noElimination) {
+      setResultMsg("Tidak ada yang tereliminasi — tidak mencapai mayoritas >50%.");
+      setTimeout(() => {
+        setResultMsg(null);
+        onRefresh();
+      }, 3000);
+    } else {
+      onRefresh();
+    }
+  }
+
+  async function handleCancelVoting() {
+    const admin = createClient();
+    await admin
+      .from("games")
+      .update({ phase: "day", vote_candidates: [] })
+      .eq("id", gameId);
+    onRefresh();
+  }
+
+  return (
+    <div
+      style={{
+        ...S.panel,
+        background: "linear-gradient(135deg,#042f2e,#0d1117)",
+        border: "1px solid #134e4a",
+      }}
+    >
+      <div
+        style={{
+          padding: "8px 16px",
+          borderRadius: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(20,184,166,0.15)",
+          border: "1px solid #0d9488",
+          color: "#5eead4",
+          fontWeight: 800,
+          marginBottom: 12,
+        }}
+      >
+        🌐 Voting Semua
+      </div>
+
+      <div style={S.narasi("#14b8a6")}>
+        Semua pemain memilih siapa yang ingin dieliminasi, atau bisa <strong>skip</strong>.
+        Pemain dengan suara <strong>lebih dari 50% ({threshold} dari {totalVoters})</strong> akan dieksekusi.
+      </div>
+
+      {resultMsg && (
+        <div
+          style={{
+            background: "rgba(234,179,8,0.12)",
+            border: "1px solid #854d0e",
+            borderRadius: 10,
+            padding: 14,
+            textAlign: "center",
+            marginBottom: 16,
+            color: "#fbbf24",
+            fontWeight: 700,
+            fontSize: "0.9rem",
+          }}
+        >
+          ⚖️ {resultMsg}
+        </div>
+      )}
+
+      {/* Vote results - all alive players sorted by votes */}
+      <div style={S.sectionTitle}>
+        <span>📊</span> Hasil Voting
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        {sortedPlayers.map((p) => {
+          const info = ROLE_INFO[p.role];
+          const voteCount = tally[p.id] ?? 0;
+          const pct = totalVoters > 0 ? (voteCount / totalVoters) * 100 : 0;
+          const meetsThreshold = voteCount >= threshold;
+          const isLeading = voteCount === maxVotes && voteCount > 0;
+          return (
+            <div
+              key={p.id}
+              style={{
+                background: meetsThreshold
+                  ? "rgba(239,68,68,0.15)"
+                  : isLeading
+                    ? "rgba(20,184,166,0.1)"
+                    : "rgba(255,255,255,0.04)",
+                border: `2px solid ${
+                  meetsThreshold ? "#ef4444" : isLeading ? "#14b8a6" : "#30363d"
+                }`,
+                borderRadius: 12,
+                padding: 14,
+                textAlign: "center",
+                transition: "all 0.3s",
+              }}
+            >
+              <div style={{ fontSize: "1.2rem", marginBottom: 2 }}>{info.emoji}</div>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                  color: "#e6edf3",
+                  marginBottom: 2,
+                }}
+              >
+                {p.name}
+              </div>
+              <div style={{ fontSize: "0.6rem", color: info.color, marginBottom: 6 }}>
+                {p.role}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.6rem",
+                  fontWeight: 900,
+                  color: meetsThreshold ? "#f87171" : isLeading ? "#5eead4" : "#8b949e",
+                }}
+              >
+                {voteCount}
+              </div>
+              <div style={{ fontSize: "0.65rem", color: "#8b949e", marginBottom: 4 }}>
+                suara
+              </div>
+              <div
+                style={{
+                  height: 5,
+                  background: "#21262d",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pct}%`,
+                    background: meetsThreshold
+                      ? "linear-gradient(90deg,#ef4444,#f87171)"
+                      : "linear-gradient(90deg,#0d9488,#14b8a6)",
+                    borderRadius: 3,
+                    transition: "width 0.5s ease",
+                  }}
+                />
+              </div>
+              {meetsThreshold && (
+                <div
+                  style={{
+                    fontSize: "0.6rem",
+                    color: "#f87171",
+                    fontWeight: 700,
+                    marginTop: 4,
+                  }}
+                >
+                  ⚠️ MAYORITAS
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Skip counter */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid #30363d",
+          borderRadius: 8,
+          padding: "8px 14px",
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <span style={{ color: "#8b949e", fontSize: "0.82rem" }}>⏭️ Skip</span>
+        <span style={{ color: "#e6edf3", fontWeight: 700 }}>{skipCount}</span>
+      </div>
+
+      {/* Voter progress */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.04)",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 16,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: "0.78rem", color: "#8b949e", marginBottom: 6 }}>
+          {totalVoted} / {totalVoters} pemain sudah voting
+        </div>
+        <div style={{ height: 4, background: "#30363d", borderRadius: 2 }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${totalVoters > 0 ? (totalVoted / totalVoters) * 100 : 0}%`,
+              background:
+                totalVoted === totalVoters
+                  ? "#3fb950"
+                  : "linear-gradient(90deg,#0d9488,#14b8a6)",
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Vote details */}
+      <div style={S.sectionTitle}>
+        <span>📋</span> Detail Suara
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 6,
+          marginBottom: 16,
+        }}
+      >
+        {alivePlayers.map((p) => {
+          const v = votes.find((x) => x.voter_id === p.id);
+          const isSkip = v && v.voter_id === v.target_id;
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: "8px 10px",
+                background: v
+                  ? isSkip
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(20,184,166,0.1)"
+                  : "rgba(255,255,255,0.03)",
+                border: `1px solid ${v ? (isSkip ? "#30363d" : "#0d9488") : "#21262d"}`,
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: v ? (isSkip ? "#8b949e" : "#14b8a6") : "#30363d",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  color: "#e6edf3",
+                  fontWeight: 600,
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.name}
+              </span>
+              {v ? (
+                isSkip ? (
+                  <span style={{ color: "#8b949e", fontSize: "0.7rem", fontStyle: "italic" }}>
+                    Skip
+                  </span>
+                ) : (
+                  <span style={{ color: "#5eead4", fontWeight: 700, fontSize: "0.7rem" }}>
+                    → {getPlayerName(v.target_id)}
+                  </span>
+                )
+              ) : (
+                <span style={{ color: "#484f58", fontSize: "0.7rem" }}>Belum</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={handleEndVoting}
+          disabled={totalVoted === 0}
+          style={{
+            ...S.btn(
+              totalVoted === totalVoters
+                ? "linear-gradient(135deg,#b91c1c,#dc2626)"
+                : "linear-gradient(135deg,#0d9488,#14b8a6)"
+            ),
+            flex: 2,
+            opacity: totalVoted === 0 ? 0.5 : 1,
+          }}
+        >
+          {totalVoted === totalVoters
+            ? "⚖️ Akhiri Voting & Proses"
+            : `⚖️ Akhiri Voting (${totalVoted}/${totalVoters})`}
+        </button>
+        <button
+          onClick={handleCancelVoting}
+          style={{
+            ...S.btn("#21262d"),
+            flex: 1,
+            border: "1px solid #30363d",
+          }}
+        >
+          ✕ Batal
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Distribution Panel ────────────────────────────────────────
 function DistributionPanel({
   cards,
@@ -1710,12 +2134,21 @@ export default function ModeratorPage({
           <DayPanel game={game} players={players} gameId={gameId} onRefresh={loadData} />
         )}
         {game.phase === "voting" && (
-          <VotingModeratorPanel
-            game={game}
-            players={players}
-            gameId={gameId}
-            onRefresh={loadData}
-          />
+          (game.vote_candidates as string[])?.includes("__global__") ? (
+            <VotingGlobalModeratorPanel
+              game={game}
+              players={players}
+              gameId={gameId}
+              onRefresh={loadData}
+            />
+          ) : (
+            <VotingModeratorPanel
+              game={game}
+              players={players}
+              gameId={gameId}
+              onRefresh={loadData}
+            />
+          )
         )}
         {game.phase === "gameover" && (
           <div style={{ ...S.panel, textAlign: "center", padding: 32 }}>

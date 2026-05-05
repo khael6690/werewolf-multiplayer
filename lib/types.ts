@@ -30,6 +30,7 @@ export interface Game {
   winner: "warga" | "werewolf" | null;
   vote_candidates: string[];
   vote_round: number;
+  hide_role: boolean;
   created_at: string;
 }
 

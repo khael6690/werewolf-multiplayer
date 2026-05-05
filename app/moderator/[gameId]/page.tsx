@@ -61,7 +61,7 @@ const S = {
 function StatusBar({ players }: { players: Player[] }) {
   const alive = players.filter((p) => p.status === "alive").length;
   const wolves = players.filter(
-    (p) => p.status === "alive" && p.role === "Werewolf"
+    (p) => p.status === "alive" && p.role === "Werewolf",
   ).length;
   const dead = players.filter((p) => p.status === "dead").length;
   return (
@@ -129,7 +129,11 @@ function PlayerGrid({
 }) {
   return (
     <div
-      style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+        gap: 8,
+      }}
     >
       {players.map((p) => {
         const info = ROLE_INFO[p.role];
@@ -205,6 +209,7 @@ function SetupPanel({
     Dokter: 1,
     Hunter: 0,
   });
+  const [hideRole, setHideRole] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -214,7 +219,7 @@ function SetupPanel({
     const res = await fetch("/api/game/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ total, roles }),
+      body: JSON.stringify({ total, roles, hideRole }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -324,6 +329,44 @@ function SetupPanel({
           </div>
         ))}
       </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px",
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid #30363d",
+          borderRadius: 8,
+          marginBottom: 20,
+          cursor: "pointer",
+        }}
+        onClick={() => setHideRole(!hideRole)}
+      >
+        <input
+          type="checkbox"
+          checked={hideRole}
+          onChange={() => {}}
+          style={{
+            width: 18,
+            height: 18,
+            accentColor: "#f0c040",
+            cursor: "pointer",
+          }}
+        />
+        <div style={{ flex: 1 }}>
+          <div
+            style={{ fontWeight: 700, color: "#e6edf3", fontSize: "0.9rem" }}
+          >
+            Sembunyikan Role Korban (Hide Role)
+          </div>
+          <div style={{ fontSize: "0.75rem", color: "#8b949e", marginTop: 2 }}>
+            Role pemain yang terbunuh atau dieksekusi tidak akan diungkap.
+          </div>
+        </div>
+      </div>
+
       {error && (
         <p style={{ color: "#f87171", fontSize: "0.82rem", marginBottom: 10 }}>
           {error}
@@ -385,7 +428,10 @@ function NightPanel({
       nextAction: () => {
         callAction("night_step", {
           step: "dokter",
-          actions: { ...game.night_actions, killId: selId || game.night_actions?.killId },
+          actions: {
+            ...game.night_actions,
+            killId: selId || game.night_actions?.killId,
+          },
         });
         setSelId(null);
       },
@@ -417,8 +463,8 @@ function NightPanel({
       btnLabel: "Semua Tidur, Proses Malam ➔",
       nextAction: () => {
         callAction("process_night", {
-          killId: game.night_actions.killId,
-          healId: game.night_actions.healId,
+          killId: game.night_actions?.killId,
+          healId: game.night_actions?.healId,
         });
       },
       filter: () => true,
@@ -427,11 +473,13 @@ function NightPanel({
       title: "🏹 Pembalasan Hunter",
       accent: "#fcd34d",
       narasi:
-        'Hunter terbunuh! Hunter sedang memilih target pembalasan via perangkatnya.',
+        "Hunter terbunuh! Hunter sedang memilih target pembalasan via perangkatnya.",
       btnLabel: "🏹 Eksekusi Peluru Hunter ➔",
       nextAction: () => {
         const actions = game.night_actions as any;
-        const hunterTarget = actions?.hunterSubmitted ? actions.hunterKillId : selId;
+        const hunterTarget = actions?.hunterSubmitted
+          ? actions.hunterKillId
+          : selId;
         callAction("hunter_revenge", { hunterKillId: hunterTarget });
         setSelId(null);
       },
@@ -502,11 +550,23 @@ function NightPanel({
       )}
 
       {step === "werewolf" && (
-        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(224,82,82,0.1)", border: "1px solid #e05252", textAlign: "center" }}>
-          <h4 style={{ margin: "0 0 8px", color: "#fca5a5" }}>Status Diskusi Werewolf:</h4>
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 8,
+            background: "rgba(224,82,82,0.1)",
+            border: "1px solid #e05252",
+            textAlign: "center",
+          }}
+        >
+          <h4 style={{ margin: "0 0 8px", color: "#fca5a5" }}>
+            Status Diskusi Werewolf:
+          </h4>
           {game.night_actions?.killId ? (
             <p style={{ margin: 0, fontWeight: "bold", color: "#e05252" }}>
-              ✅ Werewolf sepakat membunuh: {players.find(p => p.id === game.night_actions.killId)?.name}
+              ✅ Werewolf sepakat membunuh:{" "}
+              {players.find((p) => p.id === game.night_actions.killId)?.name}
             </p>
           ) : (
             <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
@@ -517,11 +577,40 @@ function NightPanel({
       )}
 
       {step === "dokter" && (
-        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(88,166,255,0.1)", border: "1px solid #58a6ff", textAlign: "center" }}>
-          <h4 style={{ margin: "0 0 8px", color: "#93c5fd" }}>Status Pilihan Dokter:</h4>
-          {(game.night_actions as any)?.dokterSubmitted ? (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 8,
+            background: "rgba(88,166,255,0.1)",
+            border: "1px solid #58a6ff",
+            textAlign: "center",
+          }}
+        >
+          <h4 style={{ margin: "0 0 8px", color: "#93c5fd" }}>
+            Status Pilihan Dokter:
+          </h4>
+          {!alivePlayers.some((p) => p.role === "Dokter") ? (
+            <p
+              style={{
+                margin: 0,
+                color: "#fca5a5",
+                fontSize: "0.85rem",
+                fontWeight: "bold",
+              }}
+            >
+              ❌ Dokter sudah mati.
+            </p>
+          ) : (game.night_actions as any)?.dokterSubmitted ? (
             <p style={{ margin: 0, fontWeight: "bold", color: "#58a6ff" }}>
-              ✅ Dokter memilih menyelamatkan: <strong>{players.find(p => p.id === (game.night_actions as any)?.healId)?.name}</strong>
+              ✅ Dokter memilih menyelamatkan:{" "}
+              <strong>
+                {
+                  players.find(
+                    (p) => p.id === (game.night_actions as any)?.healId,
+                  )?.name
+                }
+              </strong>
             </p>
           ) : (
             <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
@@ -532,18 +621,58 @@ function NightPanel({
       )}
 
       {step === "peramal" && (
-        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(188,140,255,0.1)", border: "1px solid #bc8cff", textAlign: "center" }}>
-          <h4 style={{ margin: "0 0 8px", color: "#d8b4fe" }}>Status Pilihan Peramal:</h4>
-          {(game.night_actions as any)?.peramalSubmitted ? (
-            <>
-              <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#bc8cff" }}>
-                ✅ Peramal mengintip: <strong>{players.find(p => p.id === (game.night_actions as any)?.seerTargetId)?.name}</strong>
-              </p>
-              <p style={{
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 8,
+            background: "rgba(188,140,255,0.1)",
+            border: "1px solid #bc8cff",
+            textAlign: "center",
+          }}
+        >
+          <h4 style={{ margin: "0 0 8px", color: "#d8b4fe" }}>
+            Status Pilihan Peramal:
+          </h4>
+          {!alivePlayers.some((p) => p.role === "Peramal") ? (
+            <p
+              style={{
                 margin: 0,
+                color: "#fca5a5",
+                fontSize: "0.85rem",
                 fontWeight: "bold",
-                color: (game.night_actions as any)?.seerResult === "werewolf" ? "#fca5a5" : "#86efac",
-              }}>
+              }}
+            >
+              ❌ Peramal sudah mati.
+            </p>
+          ) : (game.night_actions as any)?.peramalSubmitted ? (
+            <>
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontWeight: "bold",
+                  color: "#bc8cff",
+                }}
+              >
+                ✅ Peramal mengintip:{" "}
+                <strong>
+                  {
+                    players.find(
+                      (p) => p.id === (game.night_actions as any)?.seerTargetId,
+                    )?.name
+                  }
+                </strong>
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontWeight: "bold",
+                  color:
+                    (game.night_actions as any)?.seerResult === "werewolf"
+                      ? "#fca5a5"
+                      : "#86efac",
+                }}
+              >
                 {(game.night_actions as any)?.seerResult === "werewolf"
                   ? "🐺 WEREWOLF!"
                   : "✅ BUKAN WEREWOLF"}
@@ -558,11 +687,29 @@ function NightPanel({
       )}
 
       {step === "hunter_revenge" && (
-        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "rgba(252,211,77,0.1)", border: "1px solid #fcd34d", textAlign: "center" }}>
-          <h4 style={{ margin: "0 0 8px", color: "#fde68a" }}>Status Pilihan Hunter:</h4>
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 8,
+            background: "rgba(252,211,77,0.1)",
+            border: "1px solid #fcd34d",
+            textAlign: "center",
+          }}
+        >
+          <h4 style={{ margin: "0 0 8px", color: "#fde68a" }}>
+            Status Pilihan Hunter:
+          </h4>
           {(game.night_actions as any)?.hunterSubmitted ? (
             <p style={{ margin: 0, fontWeight: "bold", color: "#fcd34d" }}>
-              ✅ Hunter memilih menembak: <strong>{players.find(p => p.id === (game.night_actions as any)?.hunterKillId)?.name}</strong>
+              ✅ Hunter memilih menembak:{" "}
+              <strong>
+                {
+                  players.find(
+                    (p) => p.id === (game.night_actions as any)?.hunterKillId,
+                  )?.name
+                }
+              </strong>
             </p>
           ) : (
             <p style={{ margin: 0, color: "#8b949e", fontSize: "0.85rem" }}>
@@ -577,12 +724,28 @@ function NightPanel({
           step === "werewolf" ? alivePlayers.filter(cfg.filter) : alivePlayers
         }
         selectedId={
-          step === "werewolf" ? (selId || game.night_actions?.killId || null)
-          : step === "dokter" ? (selId || (game.night_actions as any)?.healId || null)
-          : step === "hunter_revenge" ? (selId || (game.night_actions as any)?.hunterKillId || null)
-          : selId
+          step === "werewolf"
+            ? selId || game.night_actions?.killId || null
+            : step === "dokter"
+              ? selId || (game.night_actions as any)?.healId || null
+              : step === "hunter_revenge"
+                ? selId || (game.night_actions as any)?.hunterKillId || null
+                : selId
         }
-        onSelect={step === "peramal" ? checkSeer : setSelId}
+        onSelect={(id) => {
+          if (
+            step === "dokter" &&
+            !alivePlayers.some((p) => p.role === "Dokter")
+          )
+            return;
+          if (
+            step === "peramal" &&
+            !alivePlayers.some((p) => p.role === "Peramal")
+          )
+            return;
+          if (step === "peramal") checkSeer(id);
+          else setSelId(id);
+        }}
         showRoles
       />
       <button
@@ -697,31 +860,121 @@ function DayPanel({
         ☀️ Fase Siang
       </div>
 
-      <div style={{ background: "rgba(255,255,255,0.05)", borderLeft: "3px solid #f0c040", padding: "12px", borderRadius: "0 8px 8px 0", marginBottom: 16 }}>
-        <h4 style={{ margin: "0 0 8px", color: "#f0c040", fontSize: "0.85rem", textTransform: "uppercase" }}>📜 Kabar Semalam:</h4>
+      <div
+        style={{
+          background: "rgba(255,255,255,0.05)",
+          borderLeft: "3px solid #f0c040",
+          padding: "12px",
+          borderRadius: "0 8px 8px 0",
+          marginBottom: 16,
+        }}
+      >
+        <h4
+          style={{
+            margin: "0 0 8px",
+            color: "#f0c040",
+            fontSize: "0.85rem",
+            textTransform: "uppercase",
+          }}
+        >
+          📜 Kabar Semalam:
+        </h4>
         {(() => {
           const actions = game.night_actions as any;
           const killId = actions?.killId;
           const healId = actions?.healId;
           const hunterKillId = actions?.hunterKillId;
-          
-          if (!actions || (!killId && !hunterKillId && game.night_round === 0)) {
-             return <p style={{ margin: 0, fontSize: "0.85rem", color: "#8b949e" }}>Belum ada kabar.</p>;
+
+          if (
+            !actions ||
+            (!killId && !hunterKillId && game.night_round === 0)
+          ) {
+            return (
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#8b949e" }}>
+                Belum ada kabar.
+              </p>
+            );
           }
 
           return (
             <>
               {killId && killId === healId && (
-                <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#86efac" }}>🐺💉 Semalam, Werewolf mencoba menyerang, tetapi Dokter berhasil menyelamatkan nyawanya!</p>
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.85rem",
+                    color: "#86efac",
+                  }}
+                >
+                  🐺💉 Semalam, Werewolf mencoba menyerang, tetapi Dokter
+                  berhasil menyelamatkan nyawanya!
+                </p>
               )}
               {killId && killId !== healId && (
-                <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#fca5a5" }}>🐺🩸 Semalam, <strong>{players.find(p => p.id === killId)?.name}</strong> tewas diserang Werewolf!</p>
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.85rem",
+                    color: "#fca5a5",
+                  }}
+                >
+                  🐺🩸 Semalam,{" "}
+                  <strong>{players.find((p) => p.id === killId)?.name}</strong>{" "}
+                  tewas diserang Werewolf!
+                  {!game.hide_role && (
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 2,
+                        color: "#8b949e",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      Ternyata dia adalah seorang{" "}
+                      <strong>
+                        {players.find((p) => p.id === killId)?.role}
+                      </strong>
+                      .
+                    </span>
+                  )}
+                </p>
               )}
               {!killId && game.night_round > 0 && (
-                 <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#e6edf3" }}>🌙 Malam berlalu dengan tenang. Tidak ada korban serangan Werewolf.</p>
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.85rem",
+                    color: "#e6edf3",
+                  }}
+                >
+                  🌙 Malam berlalu dengan tenang. Tidak ada korban serangan
+                  Werewolf.
+                </p>
               )}
               {hunterKillId && (
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh <strong>{players.find(p => p.id === hunterKillId)?.name}</strong>!</p>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>
+                  🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh{" "}
+                  <strong>
+                    {players.find((p) => p.id === hunterKillId)?.name}
+                  </strong>
+                  !
+                  {!game.hide_role && (
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 2,
+                        color: "#8b949e",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      Ternyata korban pembalasan Hunter adalah seorang{" "}
+                      <strong>
+                        {players.find((p) => p.id === hunterKillId)?.role}
+                      </strong>
+                      .
+                    </span>
+                  )}
+                </p>
               )}
             </>
           );
@@ -733,7 +986,7 @@ function DayPanel({
           <div style={S.narasi("#f0c040")}>
             Semua pemain berdiskusi. Moderator memilih cara eksekusi:
           </div>
-          
+
           <div style={{ marginBottom: 16 }}>
             <PlayerGrid
               players={players}
@@ -743,7 +996,14 @@ function DayPanel({
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
+              marginBottom: 16,
+            }}
+          >
             <button
               onClick={() => setMode("voting")}
               style={{
@@ -779,8 +1039,8 @@ function DayPanel({
             <span>🗳️</span> Pilih 2 Kandidat Voting
           </div>
           <div style={S.narasi("#a855f7")}>
-            Pilih <strong>2 pemain</strong> yang akan di-voting oleh seluruh pemain.
-            Pemain dengan suara terbanyak akan dieksekusi.
+            Pilih <strong>2 pemain</strong> yang akan di-voting oleh seluruh
+            pemain. Pemain dengan suara terbanyak akan dieksekusi.
           </div>
           <div
             style={{
@@ -808,9 +1068,7 @@ function DayPanel({
                     textAlign: "center",
                     cursor: canSelect ? "pointer" : "not-allowed",
                     transition: "all 0.2s",
-                    boxShadow: isSel
-                      ? "0 0 16px rgba(168,85,247,0.3)"
-                      : "none",
+                    boxShadow: isSel ? "0 0 16px rgba(168,85,247,0.3)" : "none",
                     opacity: !canSelect && !isSel ? 0.4 : 1,
                   }}
                 >
@@ -918,7 +1176,11 @@ function DayPanel({
               }}
             >
               <p
-                style={{ color: "#f87171", fontWeight: 700, margin: "0 0 12px" }}
+                style={{
+                  color: "#f87171",
+                  fontWeight: 700,
+                  margin: "0 0 12px",
+                }}
               >
                 Yakin eksekusi{" "}
                 <strong>{players.find((p) => p.id === selId)?.name}</strong>?
@@ -984,9 +1246,9 @@ function VotingModeratorPanel({
   onRefresh: () => void;
 }) {
   const supabase = createClient();
-  const [votes, setVotes] = useState<
-    { voter_id: string; target_id: string }[]
-  >([]);
+  const [votes, setVotes] = useState<{ voter_id: string; target_id: string }[]>(
+    [],
+  );
   const [tiebreaker, setTiebreaker] = useState<string | null>(null);
   const [tieResult, setTieResult] = useState<{
     tie: boolean;
@@ -996,9 +1258,7 @@ function VotingModeratorPanel({
 
   const candidates = (game.vote_candidates ?? []) as string[];
   const alivePlayers = players.filter((p) => p.status === "alive");
-  const eligibleVoters = alivePlayers.filter(
-    (p) => !candidates.includes(p.id)
-  );
+  const eligibleVoters = alivePlayers.filter((p) => !candidates.includes(p.id));
 
   const loadVotes = useCallback(async () => {
     const { data } = await supabase
@@ -1021,7 +1281,7 @@ function VotingModeratorPanel({
           table: "votes",
           filter: `game_id=eq.${gameId}`,
         },
-        loadVotes
+        loadVotes,
       )
       .subscribe();
     return () => {
@@ -1059,12 +1319,11 @@ function VotingModeratorPanel({
   }
 
   async function handleCancelVoting() {
-    // Return to day phase
-    const admin = createClient();
-    await admin
-      .from("games")
-      .update({ phase: "day", vote_candidates: [] })
-      .eq("id", gameId);
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel_voting", gameId, payload: {} }),
+    });
     onRefresh();
   }
 
@@ -1102,7 +1361,9 @@ function VotingModeratorPanel({
       </div>
 
       {/* Candidate cards with vote bars */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+      <div
+        style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}
+      >
         {candidates.map((cId) => {
           const p = players.find((x) => x.id === cId);
           if (!p) return null;
@@ -1256,7 +1517,9 @@ function VotingModeratorPanel({
               key={p.id}
               style={{
                 padding: "8px 10px",
-                background: v ? "rgba(168,85,247,0.1)" : "rgba(255,255,255,0.03)",
+                background: v
+                  ? "rgba(168,85,247,0.1)"
+                  : "rgba(255,255,255,0.03)",
                 border: `1px solid ${v ? "#5b21b6" : "#21262d"}`,
                 borderRadius: 8,
                 display: "flex",
@@ -1364,7 +1627,7 @@ function VotingModeratorPanel({
             ...S.btn(
               totalVotes === totalEligible
                 ? "linear-gradient(135deg,#b91c1c,#dc2626)"
-                : "linear-gradient(135deg,#7c3aed,#a855f7)"
+                : "linear-gradient(135deg,#7c3aed,#a855f7)",
             ),
             flex: 2,
             opacity: totalVotes === 0 ? 0.5 : 1,
@@ -1402,9 +1665,9 @@ function VotingGlobalModeratorPanel({
   onRefresh: () => void;
 }) {
   const supabase = createClient();
-  const [votes, setVotes] = useState<
-    { voter_id: string; target_id: string }[]
-  >([]);
+  const [votes, setVotes] = useState<{ voter_id: string; target_id: string }[]>(
+    [],
+  );
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
   const alivePlayers = players.filter((p) => p.status === "alive");
@@ -1432,7 +1695,7 @@ function VotingGlobalModeratorPanel({
           table: "votes",
           filter: `game_id=eq.${gameId}`,
         },
-        loadVotes
+        loadVotes,
       )
       .subscribe();
     return () => {
@@ -1457,7 +1720,7 @@ function VotingGlobalModeratorPanel({
 
   // Sort players by vote count (desc)
   const sortedPlayers = [...alivePlayers].sort(
-    (a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0)
+    (a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0),
   );
 
   function getPlayerName(id: string) {
@@ -1476,7 +1739,9 @@ function VotingGlobalModeratorPanel({
     });
     const data = await res.json();
     if (data.noElimination) {
-      setResultMsg("Tidak ada yang tereliminasi — tidak mencapai mayoritas >50%.");
+      setResultMsg(
+        "Tidak ada yang tereliminasi — tidak mencapai mayoritas >50%.",
+      );
       setTimeout(() => {
         setResultMsg(null);
         onRefresh();
@@ -1487,11 +1752,11 @@ function VotingGlobalModeratorPanel({
   }
 
   async function handleCancelVoting() {
-    const admin = createClient();
-    await admin
-      .from("games")
-      .update({ phase: "day", vote_candidates: [] })
-      .eq("id", gameId);
+    await fetch("/api/game/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel_voting", gameId, payload: {} }),
+    });
     onRefresh();
   }
 
@@ -1521,8 +1786,12 @@ function VotingGlobalModeratorPanel({
       </div>
 
       <div style={S.narasi("#14b8a6")}>
-        Semua pemain memilih siapa yang ingin dieliminasi, atau bisa <strong>skip</strong>.
-        Pemain dengan suara <strong>lebih dari 50% ({threshold} dari {totalVoters})</strong> akan dieksekusi.
+        Semua pemain memilih siapa yang ingin dieliminasi, atau bisa{" "}
+        <strong>skip</strong>. Pemain dengan suara{" "}
+        <strong>
+          lebih dari 50% ({threshold} dari {totalVoters})
+        </strong>{" "}
+        akan dieksekusi.
       </div>
 
       {resultMsg && (
@@ -1579,7 +1848,9 @@ function VotingGlobalModeratorPanel({
                 transition: "all 0.3s",
               }}
             >
-              <div style={{ fontSize: "1.2rem", marginBottom: 2 }}>{info.emoji}</div>
+              <div style={{ fontSize: "1.2rem", marginBottom: 2 }}>
+                {info.emoji}
+              </div>
               <div
                 style={{
                   fontWeight: 700,
@@ -1590,19 +1861,35 @@ function VotingGlobalModeratorPanel({
               >
                 {p.name}
               </div>
-              <div style={{ fontSize: "0.6rem", color: info.color, marginBottom: 6 }}>
+              <div
+                style={{
+                  fontSize: "0.6rem",
+                  color: info.color,
+                  marginBottom: 6,
+                }}
+              >
                 {p.role}
               </div>
               <div
                 style={{
                   fontSize: "1.6rem",
                   fontWeight: 900,
-                  color: meetsThreshold ? "#f87171" : isLeading ? "#5eead4" : "#8b949e",
+                  color: meetsThreshold
+                    ? "#f87171"
+                    : isLeading
+                      ? "#5eead4"
+                      : "#8b949e",
                 }}
               >
                 {voteCount}
               </div>
-              <div style={{ fontSize: "0.65rem", color: "#8b949e", marginBottom: 4 }}>
+              <div
+                style={{
+                  fontSize: "0.65rem",
+                  color: "#8b949e",
+                  marginBottom: 4,
+                }}
+              >
                 suara
               </div>
               <div
@@ -1744,16 +2031,30 @@ function VotingGlobalModeratorPanel({
               </span>
               {v ? (
                 isSkip ? (
-                  <span style={{ color: "#8b949e", fontSize: "0.7rem", fontStyle: "italic" }}>
+                  <span
+                    style={{
+                      color: "#8b949e",
+                      fontSize: "0.7rem",
+                      fontStyle: "italic",
+                    }}
+                  >
                     Skip
                   </span>
                 ) : (
-                  <span style={{ color: "#5eead4", fontWeight: 700, fontSize: "0.7rem" }}>
+                  <span
+                    style={{
+                      color: "#5eead4",
+                      fontWeight: 700,
+                      fontSize: "0.7rem",
+                    }}
+                  >
                     → {getPlayerName(v.target_id)}
                   </span>
                 )
               ) : (
-                <span style={{ color: "#484f58", fontSize: "0.7rem" }}>Belum</span>
+                <span style={{ color: "#484f58", fontSize: "0.7rem" }}>
+                  Belum
+                </span>
               )}
             </div>
           );
@@ -1769,7 +2070,7 @@ function VotingGlobalModeratorPanel({
             ...S.btn(
               totalVoted === totalVoters
                 ? "linear-gradient(135deg,#b91c1c,#dc2626)"
-                : "linear-gradient(135deg,#0d9488,#14b8a6)"
+                : "linear-gradient(135deg,#0d9488,#14b8a6)",
             ),
             flex: 2,
             opacity: totalVoted === 0 ? 0.5 : 1,
@@ -1965,7 +2266,7 @@ export default function ModeratorPage({
           table: "games",
           filter: `id=eq.${gameId}`,
         },
-        loadData
+        loadData,
       )
       .on(
         "postgres_changes",
@@ -1975,7 +2276,7 @@ export default function ModeratorPage({
           table: "cards",
           filter: `game_id=eq.${gameId}`,
         },
-        loadData
+        loadData,
       )
       .on(
         "postgres_changes",
@@ -1985,7 +2286,7 @@ export default function ModeratorPage({
           table: "players",
           filter: `game_id=eq.${gameId}`,
         },
-        loadData
+        loadData,
       )
       .subscribe();
     return () => {
@@ -2045,12 +2346,25 @@ export default function ModeratorPage({
         style={{
           minHeight: "100vh",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           background: "#0d0f14",
         }}
       >
-        <p style={{ color: "#8b949e" }}>Memuat...</p>
+        <div
+          style={{
+            fontSize: "3rem",
+            marginBottom: 16,
+            animation: "spin 2s linear infinite",
+          }}
+        >
+          ⏳
+        </div>
+        <p style={{ color: "#8b949e", fontWeight: 600 }}>Memuat Permainan...</p>
+        <style>{`
+          @keyframes spin { 100% { transform: rotate(360deg); } }
+        `}</style>
       </div>
     );
 
@@ -2131,10 +2445,15 @@ export default function ModeratorPage({
           />
         )}
         {game.phase === "day" && (
-          <DayPanel game={game} players={players} gameId={gameId} onRefresh={loadData} />
+          <DayPanel
+            game={game}
+            players={players}
+            gameId={gameId}
+            onRefresh={loadData}
+          />
         )}
-        {game.phase === "voting" && (
-          (game.vote_candidates as string[])?.includes("__global__") ? (
+        {game.phase === "voting" &&
+          ((game.vote_candidates as string[])?.includes("__global__") ? (
             <VotingGlobalModeratorPanel
               game={game}
               players={players}
@@ -2148,8 +2467,7 @@ export default function ModeratorPage({
               gameId={gameId}
               onRefresh={loadData}
             />
-          )
-        )}
+          ))}
         {game.phase === "gameover" && (
           <div style={{ ...S.panel, textAlign: "center", padding: 32 }}>
             <div style={{ fontSize: "4rem" }}>

@@ -13,9 +13,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { total, roles } = body as {
+  const { total, roles, hideRole } = body as {
     total: number;
     roles: Record<Role, number>;
+    hideRole: boolean;
   };
 
   const err = validateRoleConfig(total, roles);
@@ -26,14 +27,25 @@ export async function POST(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: code } = await admin.rpc("generate_game_code");
+  let game = null;
+  let gErr = null;
+  for (let i = 0; i < 5; i++) {
+    const { data: code } = await admin.rpc("generate_game_code");
+    const res = await admin
+      .from("games")
+      .insert({ code, moderator_id: session.user.id, phase: "distribution", hide_role: hideRole })
+      .select()
+      .maybeSingle();
 
-  const { data: game, error: gErr } = await admin
-    .from("games")
-    .insert({ code, moderator_id: session.user.id, phase: "distribution" })
-    .select()
-    .single();
-  if (gErr) return NextResponse.json({ error: gErr.message }, { status: 500 });
+    if (!res.error && res.data) {
+      game = res.data;
+      break;
+    }
+    gErr = res.error;
+    if (gErr && gErr.code !== '23505') break; // Only retry on unique constraint violation
+  }
+
+  if (!game) return NextResponse.json({ error: gErr?.message || "Failed to create game after multiple attempts" }, { status: 500 });
 
   const deck = buildRoleDeck(roles);
   const cards = deck.map((role, i) => ({

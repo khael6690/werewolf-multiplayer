@@ -1978,7 +1978,7 @@ export default function PlayPage({
         .order("slot"),
       supabase
         .from("players")
-        .select("id,name,status,slot")
+        .select("id,name,status,slot,role")
         .eq("game_id", gameId)
         .order("slot"),
     ]);

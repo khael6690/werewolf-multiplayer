@@ -67,6 +67,7 @@ export interface PlayerPublic {
   name: string;
   status: PlayerStatus;
   slot: number;
+  role?: Role;
 }
 
 export interface GameEvent {

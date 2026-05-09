@@ -334,19 +334,20 @@ function VotingPlayerPanel({
         setVoting(false);
         return;
       }
-      // Insert vote directly via Supabase (RLS allows inserts)
-      const { error: insertError } = await supabase.from("votes").insert({
-        game_id: game.id,
-        round: game.vote_round,
-        voter_id: myId,
-        target_id: targetId,
+      
+      const res = await fetch("/api/game/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cast_vote",
+          gameId: game.id,
+          payload: { voterId: myId, targetId },
+        }),
       });
-      if (insertError) {
-        if (insertError.code === "23505") {
-          setError("Sudah voting di ronde ini");
-        } else {
-          setError(insertError.message || "Gagal voting");
-        }
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Gagal voting");
       } else {
         setMyVote(targetId);
       }
@@ -742,18 +743,19 @@ function VotingGlobalPlayerPanel({
     setVoting(true);
     setError("");
     try {
-      const { error: insertError } = await supabase.from("votes").insert({
-        game_id: game.id,
-        round: game.vote_round,
-        voter_id: myId,
-        target_id: targetId,
+      const res = await fetch("/api/game/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cast_vote",
+          gameId: game.id,
+          payload: { voterId: myId, targetId },
+        }),
       });
-      if (insertError) {
-        if (insertError.code === "23505") {
-          setError("Sudah voting di ronde ini");
-        } else {
-          setError(insertError.message || "Gagal voting");
-        }
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Gagal voting");
       } else {
         setMyVote(targetId);
       }

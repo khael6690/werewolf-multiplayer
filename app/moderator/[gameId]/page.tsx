@@ -2100,15 +2100,33 @@ function DistributionPanel({
   cards,
   players,
   gameId,
+  gameCode,
   onRefresh,
 }: {
   cards: Card[];
   players: Player[];
   gameId: string;
+  gameCode: string;
   onRefresh: () => void;
 }) {
   const picked = cards.filter((c) => c.picked).length;
   const total = cards.length;
+
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(gameCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyLink = () => {
+    const playUrl = `${window.location.origin}/play/${gameId}`;
+    navigator.clipboard.writeText(playUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
 
   async function startGame() {
     await fetch("/api/game/action", {
@@ -2124,10 +2142,114 @@ function DistributionPanel({
       <div style={S.sectionTitle}>
         <span>🃏</span> Distribusi Peran
       </div>
+
+      {/* Premium Copy/Paste Area for Room Code & Play Link */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #1c2330, #0d1117)",
+          border: "1px solid #30363d",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Row 1: Room Code */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "#161b22",
+              border: "1px solid #30363d",
+              borderRadius: 8,
+              padding: "10px 14px",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: "0.7rem", color: "#8b949e", fontWeight: 600, textTransform: "uppercase" }}>
+                🔑 KODE ROOM
+              </span>
+              <span style={{ fontSize: "1.3rem", fontWeight: 800, color: "#f0c040", letterSpacing: 1.5 }}>
+                {gameCode}
+              </span>
+            </div>
+            <button
+              onClick={handleCopyCode}
+              style={{
+                background: copiedCode ? "rgba(63,185,80,0.15)" : "#21262d",
+                color: copiedCode ? "#3fb950" : "#c9d1d9",
+                border: `1px solid ${copiedCode ? "#3fb950" : "#30363d"}`,
+                borderRadius: 6,
+                padding: "8px 12px",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.2s ease",
+              }}
+            >
+              {copiedCode ? "✓ Tersalin" : "📋 Salin Kode"}
+            </button>
+          </div>
+
+          {/* Row 2: Play Link */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "#161b22",
+              border: "1px solid #30363d",
+              borderRadius: 8,
+              padding: "10px 14px",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, marginRight: 8, overflow: "hidden" }}>
+              <span style={{ fontSize: "0.7rem", color: "#8b949e", fontWeight: 600, textTransform: "uppercase" }}>
+                🔗 LINK PEMAIN
+              </span>
+              <span
+                style={{
+                  fontSize: "0.82rem",
+                  color: "#58a6ff",
+                  textDecoration: "underline",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {typeof window !== "undefined" ? `${window.location.origin}/play/${gameId}` : `/play/${gameId}`}
+              </span>
+            </div>
+            <button
+              onClick={handleCopyLink}
+              style={{
+                background: copiedLink ? "rgba(63,185,80,0.15)" : "#21262d",
+                color: copiedLink ? "#3fb950" : "#c9d1d9",
+                border: `1px solid ${copiedLink ? "#3fb950" : "#30363d"}`,
+                borderRadius: 6,
+                padding: "8px 12px",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.2s ease",
+              }}
+            >
+              {copiedLink ? "✓ Tersalin" : "📋 Salin Link"}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div style={S.narasi()}>
-        Pemain membuka <strong>/play/{gameId}</strong> di HP masing-masing dan
-        memilih kartu. Kartu yang sudah dipilih terkunci otomatis secara
-        realtime.
+        Pemain membuka link di atas atau memasukkan Kode Room di halaman utama untuk bergabung dan memilih peran secara realtime.
       </div>
       <div
         style={{
@@ -2240,6 +2362,14 @@ export default function ModeratorPage({
   const [cards, setCards] = useState<Card[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [isSetup, setIsSetup] = useState(!gameId || gameId === "new");
+
+  const [copiedCodeHeader, setCopiedCodeHeader] = useState(false);
+  const handleCopyCodeHeader = () => {
+    if (!game) return;
+    navigator.clipboard.writeText(game.code);
+    setCopiedCodeHeader(true);
+    setTimeout(() => setCopiedCodeHeader(false), 2000);
+  };
 
   const loadData = useCallback(async () => {
     if (!gameId || gameId === "new") return;
@@ -2401,9 +2531,29 @@ export default function ModeratorPage({
             🐺 WEREWOLF — Mod
           </h1>
           <p
-            style={{ color: "#8b949e", fontSize: "0.72rem", margin: "2px 0 0" }}
+            onClick={handleCopyCodeHeader}
+            style={{
+              color: "#8b949e",
+              fontSize: "0.72rem",
+              margin: "2px 0 0",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+            title="Klik untuk menyalin kode room"
           >
-            Kode: <strong style={{ color: "#e6edf3" }}>{game.code}</strong>
+            Kode:{" "}
+            <strong
+              style={{
+                color: copiedCodeHeader ? "#3fb950" : "#e6edf3",
+                textDecoration: "underline",
+                textDecorationStyle: "dashed",
+              }}
+            >
+              {game.code}
+            </strong>{" "}
+            <span style={{ fontSize: "0.8rem" }}>{copiedCodeHeader ? "✓" : "📋"}</span>
           </p>
         </div>
         <button
@@ -2433,6 +2583,7 @@ export default function ModeratorPage({
             cards={cards}
             players={players}
             gameId={gameId}
+            gameCode={game.code}
             onRefresh={loadData}
           />
         )}

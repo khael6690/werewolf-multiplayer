@@ -31,6 +31,7 @@ export interface Game {
   vote_candidates: string[];
   vote_round: number;
   created_at: string;
+  phase_end_at: string | null;
 }
 
 export interface Card {

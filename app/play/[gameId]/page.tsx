@@ -4,6 +4,34 @@ import { createClient } from "../../../lib/supabase/client";
 import type { Game, CardPublic, PlayerPublic, Role } from "../../../lib/types";
 import { ROLE_INFO } from "../../../lib/types";
 
+function GameTimer({ endTime }: { endTime: string | null }) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!endTime) return;
+    const interval = setInterval(() => {
+      const diff = new Date(endTime).getTime() - Date.now();
+      setRemaining(Math.max(0, Math.floor(diff / 1000)));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [endTime]);
+
+  if (remaining === null || remaining <= 0) return null;
+  return (
+    <div style={{ 
+      background: '#30363d', 
+      padding: '4px 12px', 
+      borderRadius: 20, 
+      fontSize: '0.8rem', 
+      color: '#ff7b72',
+      textAlign: 'center',
+      marginBottom: 10
+    }}>
+      ⏱️ Sisa Waktu: {remaining}s
+    </div>
+  );
+}
+
 function CardPickScreen({
   gameId,
   cards,
@@ -1502,6 +1530,51 @@ function HunterNightUI({
   );
 }
 
+function GraveyardChat({ gameId, players, myId }: { gameId: string, players: PlayerPublic[], myId: string }) {
+  const supabase = createClient();
+  const [messages, setMessages] = useState<{id: string, sender: string, text: string}[]>([]);
+  const [input, setInput] = useState("");
+
+  useEffect(() => {
+    const channel = supabase.channel(`chat:graveyard:${gameId}`);
+    channel.on('broadcast', { event: 'message' }, (payload) => {
+      setMessages((prev) => [...prev, payload.payload]);
+    }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [gameId, supabase]);
+
+  const send = () => {
+    if (!input.trim()) return;
+    const sender = players.find(p => p.id === myId)?.name || "Ghost";
+    supabase.channel(`chat:graveyard:${gameId}`).send({
+      type: 'broadcast',
+      event: 'message',
+      payload: { id: Date.now().toString(), sender, text: input }
+    });
+    setInput("");
+  };
+
+  return (
+    <div style={{ background: "#1c2330", border: "1px solid #30363d", borderRadius: 12, padding: 16, marginTop: 20, marginBottom: 16 }}>
+      <h3 style={{ color: "#8b949e", fontSize: "0.9rem", marginBottom: 10 }}>👻 Obrolan Arwah (Graveyard)</h3>
+      <div style={{ height: 150, overflowY: "auto", marginBottom: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+        {messages.length === 0 ? (
+          <p style={{ color: "#484f58", fontSize: "0.8rem", fontStyle: "italic" }}>Belum ada pesan. Sapa arwah lain...</p>
+        ) : (
+          messages.map(m => <div key={m.id} style={{ fontSize: "0.8rem", color: "#e6edf3" }}><strong>{m.sender}:</strong> {m.text}</div>)
+        )}
+      </div>
+      <input 
+        value={input} 
+        onChange={(e) => setInput(e.target.value)} 
+        onKeyDown={(e) => e.key === 'Enter' && send()} 
+        placeholder="Ketik pesan..." 
+        style={{ width: "100%", padding: 8, background: "#0d1117", border: "1px solid #30363d", color: "white", borderRadius: 6 }} 
+      />
+    </div>
+  );
+}
+
 function PlayerDashboard({
   players,
   game,
@@ -1831,6 +1904,10 @@ function PlayerDashboard({
           💀 {dead} Mati
         </span>
       </div>
+      {myId && players.find(p => p.id === myId)?.status === 'dead' && (
+        <GraveyardChat gameId={game.id} players={players} myId={myId} />
+      )}
+
       <p
         style={{
           color: "#8b949e",

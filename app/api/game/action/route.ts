@@ -35,6 +35,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   switch (action) {
+    case "cancel_voting":
+      await admin
+        .from("games")
+        .update({ phase: "day", vote_candidates: [] })
+        .eq("id", gameId);
+      break;
     case "start_night":
       await admin
         .from("games")
@@ -58,14 +64,11 @@ export async function POST(request: Request) {
       if (!voter || voter.role !== "Werewolf" || voter.status !== "alive")
         return NextResponse.json({ error: "Invalid voter" }, { status: 400 });
 
-      const currentActions = (game.night_actions as any) || {};
-      const wwVotes = currentActions.wwVotes || {};
-      wwVotes[voterId] = targetId;
-
-      await admin
-        .from("games")
-        .update({ night_actions: { ...currentActions, wwVotes } })
-        .eq("id", gameId);
+      await admin.rpc("update_ww_vote", {
+        p_game_id: gameId,
+        p_voter_id: voterId,
+        p_target_id: targetId,
+      });
       break;
     }
     case "ww_confirm_kill": {
@@ -347,7 +350,7 @@ export async function POST(request: Request) {
       if (vp?.role === "Hunter") {
         await admin
           .from("games")
-          .update({ phase: "night", night_step: "hunter_revenge", vote_candidates: [] })
+          .update({ phase: "night", night_step: "hunter_revenge", vote_candidates: [], night_actions: {} })
           .eq("id", gameId);
         return NextResponse.json({ phase: "hunter_revenge", executed: vp, tally });
       }
@@ -460,7 +463,7 @@ export async function POST(request: Request) {
       if (gVp?.role === "Hunter") {
         await admin
           .from("games")
-          .update({ phase: "night", night_step: "hunter_revenge", vote_candidates: [] })
+          .update({ phase: "night", night_step: "hunter_revenge", vote_candidates: [], night_actions: {} })
           .eq("id", gameId);
         return NextResponse.json({ phase: "hunter_revenge", executed: gVp, tally: gTally });
       }
@@ -503,7 +506,7 @@ export async function POST(request: Request) {
       if (vp?.role === "Hunter") {
         await admin
           .from("games")
-          .update({ phase: "night", night_step: "hunter_revenge" })
+          .update({ phase: "night", night_step: "hunter_revenge", night_actions: {} })
           .eq("id", gameId);
         return NextResponse.json({ phase: "hunter_revenge", executed: vp });
       }

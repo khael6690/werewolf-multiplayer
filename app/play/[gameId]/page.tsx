@@ -362,19 +362,20 @@ function VotingPlayerPanel({
         setVoting(false);
         return;
       }
-      // Insert vote directly via Supabase (RLS allows inserts)
-      const { error: insertError } = await supabase.from("votes").insert({
-        game_id: game.id,
-        round: game.vote_round,
-        voter_id: myId,
-        target_id: targetId,
+      
+      const res = await fetch("/api/game/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cast_vote",
+          gameId: game.id,
+          payload: { voterId: myId, targetId },
+        }),
       });
-      if (insertError) {
-        if (insertError.code === "23505") {
-          setError("Sudah voting di ronde ini");
-        } else {
-          setError(insertError.message || "Gagal voting");
-        }
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Gagal voting");
       } else {
         setMyVote(targetId);
       }
@@ -770,18 +771,19 @@ function VotingGlobalPlayerPanel({
     setVoting(true);
     setError("");
     try {
-      const { error: insertError } = await supabase.from("votes").insert({
-        game_id: game.id,
-        round: game.vote_round,
-        voter_id: myId,
-        target_id: targetId,
+      const res = await fetch("/api/game/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cast_vote",
+          gameId: game.id,
+          payload: { voterId: myId, targetId },
+        }),
       });
-      if (insertError) {
-        if (insertError.code === "23505") {
-          setError("Sudah voting di ronde ini");
-        } else {
-          setError(insertError.message || "Gagal voting");
-        }
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Gagal voting");
       } else {
         setMyVote(targetId);
       }
@@ -1858,13 +1860,19 @@ function PlayerDashboard({
                   <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#86efac" }}>🐺💉 Semalam, Werewolf mencoba menyerang, tetapi Dokter berhasil menyelamatkan nyawanya!</p>
                 )}
                 {killId && killId !== healId && (
-                  <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#fca5a5" }}>🐺🩸 Semalam, <strong>{players.find(p => p.id === killId)?.name}</strong> tewas diserang Werewolf!</p>
+                  <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#fca5a5" }}>
+                    🐺🩸 Semalam, <strong>{players.find(p => p.id === killId)?.name}</strong> tewas diserang Werewolf!
+                    {!game.hide_role && <span style={{ display: "block", marginTop: 2, color: "#8b949e", fontSize: "0.75rem" }}>Ternyata dia adalah seorang <strong>{players.find(p => p.id === killId)?.role}</strong>.</span>}
+                  </p>
                 )}
                 {!killId && game.night_round > 0 && (
                    <p style={{ margin: "0 0 6px", fontSize: "0.85rem", color: "#e6edf3" }}>🌙 Malam berlalu dengan tenang. Tidak ada korban serangan Werewolf.</p>
                 )}
                 {hunterKillId && (
-                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh <strong>{players.find(p => p.id === hunterKillId)?.name}</strong>!</p>
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#fcd34d" }}>
+                    🏹 Sebelum gugur, Hunter sempat membalas dendam dan membunuh <strong>{players.find(p => p.id === hunterKillId)?.name}</strong>!
+                    {!game.hide_role && <span style={{ display: "block", marginTop: 2, color: "#8b949e", fontSize: "0.75rem" }}>Ternyata korban pembalasan Hunter adalah seorang <strong>{players.find(p => p.id === hunterKillId)?.role}</strong>.</span>}
+                  </p>
                 )}
               </>
             );
@@ -1959,11 +1967,18 @@ function PlayerDashboard({
                 Kamu
               </div>
             )}
+            {myRole === "Werewolf" && p.id !== myId && wwList.includes(p.id) && p.status === "alive" && (
+              <div
+                style={{ fontSize: "0.65rem", color: "#fca5a5", marginTop: 3, fontWeight: 700 }}
+              >
+                🐺 Teman Werewolf
+              </div>
+            )}
             {p.status === "dead" && (
               <div
                 style={{ fontSize: "0.65rem", color: "#6b3333", marginTop: 3 }}
               >
-                💀 Mati
+                💀 Mati {!game.hide_role && `(${p.role})`}
               </div>
             )}
           </div>
@@ -2042,7 +2057,7 @@ export default function PlayPage({
         .order("slot"),
       supabase
         .from("players")
-        .select("id,name,status,slot")
+        .select("id,name,status,slot,role")
         .eq("game_id", gameId)
         .order("slot"),
     ]);

@@ -30,6 +30,7 @@ export interface Game {
   winner: "warga" | "werewolf" | null;
   vote_candidates: string[];
   vote_round: number;
+  hide_role: boolean;
   created_at: string;
   phase_end_at: string | null;
 }
@@ -67,6 +68,7 @@ export interface PlayerPublic {
   name: string;
   status: PlayerStatus;
   slot: number;
+  role?: Role;
 }
 
 export interface GameEvent {
